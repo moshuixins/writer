@@ -46,23 +46,38 @@ async def upload_material(
     keywords = svc.extract_keywords(content_text)
 
     # 5. LLM分类
-    truncated = content_text[:3000]
+    truncated = content_text[:5000]
     raw_type = llm.invoke(CLASSIFY_PROMPT.format(content=truncated)).strip()
     doc_type = validate_classify(raw_type)
 
     # 6. LLM摘要
     summary = llm.invoke(SUMMARIZE_PROMPT.format(content=truncated)).strip()
 
+    # 6.5 风格学习
+    try:
+        from app.services.style_analyzer import StyleAnalyzer
+
+        StyleAnalyzer(db).analyze_and_store(content_text, doc_type)
+    except Exception as e:
+        logger.warning("风格分析失败: %s", e)
+
     # 7. 存入数据库
     material = svc.create_material(
-        user_id=current_user.id, title=title, filename=file.filename,
-        file_path=file_path, content_text=content_text,
-        doc_type=doc_type, summary=summary, keywords=keywords,
+        user_id=current_user.id,
+        title=title,
+        filename=file.filename,
+        file_path=file_path,
+        content_text=content_text,
+        doc_type=doc_type,
+        summary=summary,
+        keywords=keywords,
     )
 
     # 8. 存入 OpenViking 向量库（传纯文本，避免 OV 解析 docx 兼容性问题）
     try:
-        await ctx_bridge.add_material(file_path, doc_type, title, content_text=content_text)
+        await ctx_bridge.add_material(
+            file_path, doc_type, title, content_text=content_text
+        )
     except Exception:
         pass  # OpenViking 不可用时不阻塞上传
 
@@ -88,14 +103,20 @@ def list_materials(
     """获取素材列表"""
     svc = MaterialService(db)
     materials = svc.get_materials(
-        user_id=current_user.id, doc_type=doc_type,
-        keyword=keyword, skip=skip, limit=limit,
+        user_id=current_user.id,
+        doc_type=doc_type,
+        keyword=keyword,
+        skip=skip,
+        limit=limit,
     )
     return [
         {
-            "id": m.id, "title": m.title,
-            "doc_type": m.doc_type, "summary": m.summary,
-            "keywords": m.keywords, "char_count": m.char_count,
+            "id": m.id,
+            "title": m.title,
+            "doc_type": m.doc_type,
+            "summary": m.summary,
+            "keywords": m.keywords,
+            "char_count": m.char_count,
             "created_at": m.created_at.isoformat(),
         }
         for m in materials
@@ -128,9 +149,12 @@ def get_material(
     if m.user_id != current_user.id:
         raise HTTPException(403, "无权访问该素材")
     return {
-        "id": m.id, "title": m.title,
-        "doc_type": m.doc_type, "summary": m.summary,
-        "keywords": m.keywords, "content_text": m.content_text,
+        "id": m.id,
+        "title": m.title,
+        "doc_type": m.doc_type,
+        "summary": m.summary,
+        "keywords": m.keywords,
+        "content_text": m.content_text,
         "char_count": m.char_count,
         "original_filename": m.original_filename,
         "created_at": m.created_at.isoformat(),
@@ -190,9 +214,14 @@ def batch_classify_materials(
     if not req.ids:
         raise HTTPException(400, "请选择要分类的素材")
     from app.models.material import Material
-    updated = db.query(Material).filter(
-        Material.id.in_(req.ids),
-        Material.user_id == current_user.id,
-    ).update({"doc_type": req.doc_type}, synchronize_session="fetch")
+
+    updated = (
+        db.query(Material)
+        .filter(
+            Material.id.in_(req.ids),
+            Material.user_id == current_user.id,
+        )
+        .update({"doc_type": req.doc_type}, synchronize_session="fetch")
+    )
     db.commit()
     return {"message": f"已更新 {updated} 条素材的分类"}
