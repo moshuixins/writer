@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Data
+data/writer.db
+data/uploads/*
+data/exports/*
+data/chroma/
+data/openviking/workspace/
+!data/uploads/.gitkeep
+!data/exports/.gitkeep
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+frontend/dist/
+*.egg-info/
+
+# Logs
+*.log
