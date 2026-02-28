@@ -1,50 +1,58 @@
 # 公文写作助手
 
-基于 AI 的公文写作辅助系统，支持素材管理、智能分类摘要、风格学习、多轮对话写作、标准公文格式导出。
+交管支队智能公文写作平台，基于 AI 多轮对话生成标准公文，支持素材语义检索、风格学习、隐式记忆、流式输出。
 
 ## 技术栈
 
-- 后端：FastAPI + SQLAlchemy + LangChain + OpenAI API
+- 后端：FastAPI + SQLAlchemy + LangChain + SiliconFlow (DeepSeek-V3.2)
 - 前端：Vue 3 + TypeScript + Element Plus + Pinia
 - 向量检索与记忆：OpenViking（字节跳动开源 AI Agent 上下文数据库）
 - 文档生成：python-docx（GB/T 9704-2012 标准格式）
-- 中文分词：jieba
+- 部署：Docker Compose
 
 ## 项目结构
 
 ```
 writer/
-├── .env                          # 环境变量配置
+├── .env.example                  # 环境变量模板
+├── docker-compose.yml            # Docker 编排（backend + frontend + openviking）
 ├── backend/
+│   ├── Dockerfile
 │   ├── requirements.txt
 │   └── app/
-│       ├── main.py               # FastAPI 入口
-│       ├── config.py             # 配置管理
-│       ├── database.py           # 数据库连接
+│       ├── main.py               # FastAPI 入口、CORS、限流中间件
+│       ├── config.py             # 配置管理（路径自动计算）
+│       ├── database.py           # SQLAlchemy 连接
+│       ├── auth.py               # JWT 认证
 │       ├── api/                  # API 路由
-│       │   ├── materials.py      # 素材管理
-│       │   ├── chat.py           # 写作对话
-│       │   ├── documents.py      # 文档导出
+│       │   ├── auth.py           # 注册 / 登录
+│       │   ├── materials.py      # 素材管理（含批量操作）
+│       │   ├── chat.py           # 写作对话（含 SSE 流式）
+│       │   ├── documents.py      # 文档导出 / 历史
 │       │   └── preferences.py    # 用户偏好
 │       ├── services/             # 业务逻辑
-│       │   ├── material_service.py   # 素材解析、分类、摘要
 │       │   ├── writing_service.py    # 写作引导与内容生成
+│       │   ├── material_service.py   # 素材解析、分类、摘要
 │       │   ├── style_analyzer.py     # 风格学习与特征提取
 │       │   ├── docx_generator.py     # 公文 docx 生成
 │       │   ├── context_bridge.py     # OpenViking 适配层
 │       │   ├── memory_service.py     # 用户显式偏好管理
-│       │   └── llm_service.py        # LLM 调用封装
-│       ├── models/               # 数据库模型
-│       ├── prompts/              # LLM Prompt 模板
-│       └── templates/
+│       │   └── llm_service.py        # LLM 调用封装（含流式）
+│       ├── models/               # 数据库模型（含复合索引）
+│       └── prompts/              # LLM Prompt 模板
 ├── frontend/
+│   ├── Dockerfile
+│   ├── nginx.conf                # Nginx 反向代理配置
 │   └── src/
 │       ├── views/
+│       │   ├── Login.vue             # 登录页
+│       │   ├── WritingChat.vue       # 写作对话页（SSE 打字机效果）
 │       │   ├── MaterialManager.vue   # 素材管理页
-│       │   ├── WritingChat.vue       # 写作对话页
+│       │   ├── ExportHistory.vue     # 导出历史页
 │       │   └── Settings.vue          # 偏好设置页
-│       ├── api/index.ts          # API 客户端
-│       └── router/index.ts
+│       ├── types/index.ts        # 共享类型定义
+│       ├── api/index.ts          # Axios 客户端
+│       └── stores/auth.ts        # Pinia 认证状态
 └── data/
     ├── openviking/ov.conf        # OpenViking 配置
     ├── uploads/                  # 上传文件存储
@@ -54,44 +62,59 @@ writer/
 ## 架构设计
 
 ```
-┌─────────────────────────────────────────────────┐
-│          Frontend (Vue 3 + Element Plus)         │
-│  素材管理 │ 写作对话 │ 文档预览 │ 偏好设置       │
-└──────────────────┬──────────────────────────────┘
-                   │ REST API
-┌──────────────────▼──────────────────────────────┐
-│              FastAPI Backend                      │
-│                                                  │
-│  API层: /materials /chat /documents /preferences │
-│                                                  │
-│  服务层:                                         │
-│    MaterialService  - 素材上传、解析、分类/摘要   │
-│    WritingService   - 写作引导与内容生成          │
-│    StyleAnalyzer    - 风格学习与特征提取          │
-│    DocxGenerator    - GB/T 9704 公文格式生成      │
-│    MemoryService    - 用户显式偏好管理            │
-│    ContextBridge    - OpenViking 适配层           │
-│                                                  │
-│  AI层: LangChain + OpenAI (GPT-4o)              │
-└───────┬──────────────┬──────────────┬────────────┘
-   SQLite/PG      OpenViking        文件系统
+┌─────────────────────────────────────────────────────┐
+│           Frontend (Vue 3 + Element Plus)            │
+│  登录  │  写作对话  │  素材管理  │  导出历史  │  设置  │
+└───────────────────┬─────────────────────────────────┘
+                    │ REST API + SSE
+┌───────────────────▼─────────────────────────────────┐
+│               FastAPI Backend                        │
+│                                                      │
+│  认证: JWT (注册/登录/鉴权)                           │
+│  安全: CORS 白名单 + IP 限流 (60 req/min)            │
+│                                                      │
+│  API层:                                              │
+│    /api/auth        用户认证                          │
+│    /api/chat        写作对话 (含 SSE 流式)            │
+│    /api/materials   素材管理 (含批量操作)              │
+│    /api/documents   文档导出与历史                     │
+│    /api/preferences 用户偏好                          │
+│                                                      │
+│  服务层:                                              │
+│    WritingService   写作引导与内容生成                 │
+│    MaterialService  素材上传、解析、分类/摘要          │
+│    StyleAnalyzer    风格学习与特征提取                 │
+│    DocxGenerator    GB/T 9704 公文格式生成             │
+│    ContextBridge    OpenViking 适配层                  │
+│    LLMService       LLM 调用封装 (含流式)             │
+│                                                      │
+│  AI层: LangChain + SiliconFlow (DeepSeek-V3.2)      │
+└──────┬──────────────┬──────────────┬─────────────────┘
+    SQLite        OpenViking        文件系统
   (结构化数据)  (向量+记忆+会话)   (原始文件)
 ```
 
 ## 核心功能
 
-### 素材管理
-- 上传 docx/pdf/txt 文件，自动提取文本内容
-- LLM 自动分类（通知、报告、请示、批复、函、纪要等）
-- LLM 自动生成摘要
-- jieba 提取关键词
-- OpenViking 层级检索（L0摘要 → L1概览 → L2全文），精度优于扁平 RAG
+### 用户认证
+- JWT Token 认证，所有 API 均需登录
+- 注册 / 登录，密码 bcrypt 加密
+- 数据按用户隔离，含所有权校验
 
 ### 写作对话
-- 多轮对话式写作：先分析需求 → 告知所需材料 → 生成公文
-- 首条消息自动触发写作引导，分析用户需求并列出所需素材清单
-- RAG 检索相关参考范文辅助生成
-- OpenViking 自动提取写作习惯（隐式记忆），结合用户显式偏好
+- 多轮对话式写作：分析需求 → 列出所需材料 → 生成公文
+- SSE 流式输出，AI 回复逐字显示（打字机效果）
+- RAG 检索 top 5 相关参考范文辅助生成
+- OpenViking 自动提取写作习惯（隐式记忆）
+- 消息发送失败自动回滚，DOMPurify 防 XSS
+
+### 素材管理
+- 上传 docx/pdf/txt 文件，自动提取文本
+- LLM 自动分类（通知、报告、请示、批复、函、纪要等）
+- LLM 自动生成摘要，jieba 提取关键词
+- 支持批量删除、批量分类
+- OpenViking 层级检索（L0摘要 → L1概览 → L2全文）
+- 分页、搜索防抖、上传进度显示
 
 ### 风格学习
 - 分析上传素材的写作风格特征（用词、句式、结构）
@@ -101,126 +124,132 @@ writer/
 ### 文档导出
 - 生成符合 GB/T 9704-2012 标准的 docx 文件
 - 支持标题、正文、落款等公文要素格式化
-- 中文字体：方正小标宋（标题）、仿宋_GB2312（正文）
+- 导出历史记录，支持重新下载
 
 ### 记忆系统
-- 显式偏好：用户手动设置的写作偏好（MemoryService，SQLAlchemy 存储）
-- 隐式记忆：OpenViking 自动从对话中提取用户习惯、偏好、实体等 6 类记忆
+- 显式偏好：用户手动设置的写作偏好（SQLAlchemy 存储）
+- 隐式记忆：OpenViking 自动从对话中提取用户习惯、偏好等
 - 记忆去重与热度衰减，自动管理生命周期
+
+### 安全机制
+- JWT 认证，所有接口鉴权
+- CORS 白名单（仅允许配置的前端域名）
+- IP 级滑动窗口限流（默认 60 次/分钟）
+- 数据所有权校验（403 拒绝越权访问）
+- DOMPurify 前端 XSS 防护
 
 ## 快速开始
 
-### 环境要求
+### Docker 部署（推荐）
 
-- Python 3.10+
-- Node.js 18+
-- OpenAI API Key（GPT-4o + text-embedding-3-small）
-- OpenViking Server（可选，不启动时系统仍可正常运行）
-
-### 1. 配置环境变量
-
-编辑项目根目录 `.env` 文件：
+1. 复制环境变量模板并填写：
 
 ```bash
-OPENAI_API_KEY=sk-your-actual-key
-OPENAI_BASE_URL=https://api.openai.com/v1    # 或兼容 API 地址
-OPENAI_MODEL=gpt-4o
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-SECRET_KEY=your-random-secret-key
+cp .env.example .env
+# 编辑 .env，填入你的 API Key 和 Secret Key
 ```
 
-### 2. 启动后端
+2. 启动所有服务：
 
 ```bash
+docker compose up -d
+```
+
+启动顺序：OpenViking（等待健康检查通过）→ Backend → Frontend
+
+3. 访问 `http://localhost`，注册账号即可使用。
+
+### 本地开发
+
+```bash
+# 后端
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
-```
 
-### 3. 启动前端
-
-```bash
+# 前端
 cd frontend
 npm install
 npm run dev
 ```
 
-### 4. 启动 OpenViking（可选）
+前端开发服务器默认 `http://localhost:3000`，已配置代理转发 `/api` 到后端。
 
-OpenViking 提供向量检索和自动记忆提取能力。不启动时系统仍可正常使用，但语义搜索和隐式记忆功能不可用。
+### 环境变量
 
-```bash
-cd OpenViking-main
-# 需要 Go 编译器 + CMake，详见 OpenViking 文档
-pip install -e .
-openviking-server --config ../data/openviking/ov.conf
-```
+参考 `.env.example`：
 
-服务默认监听 `http://127.0.0.1:1933`。
+| 变量 | 说明 | 示例 |
+|------|------|------|
+| `OPENAI_API_KEY` | LLM API 密钥 | `sk-xxx` |
+| `OPENAI_BASE_URL` | API 地址 | `https://api.siliconflow.cn/v1` |
+| `OPENAI_MODEL` | 对话模型 | `deepseek-ai/DeepSeek-V3.2` |
+| `OPENAI_EMBEDDING_MODEL` | 向量模型 | `Qwen/Qwen3-Embedding-8B` |
+| `OPENVIKING_SERVER_URL` | OV 地址（Docker: `http://openviking:1933`） | `http://127.0.0.1:1933` |
+| `SECRET_KEY` | JWT 签名密钥 | 随机字符串 |
 
 ## API 接口
 
 后端启动后可访问 `http://localhost:8000/docs` 查看 Swagger 文档。
 
-### 素材管理 `/api/materials`
+### 认证 `/api/auth`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/upload` | 上传素材文件（docx/pdf/txt），自动分类摘要 |
-| GET | `/` | 获取素材列表，支持 `doc_type`、`keyword` 筛选 |
-| GET | `/search?query=` | 语义搜索素材（OpenViking 层级检索） |
-| GET | `/{id}` | 获取素材详情（含全文） |
-| DELETE | `/{id}` | 删除素材 |
+| POST | `/register` | 用户注册 |
+| POST | `/login` | 用户登录，返回 JWT Token |
 
-### 写作对话 `/api/chat`
+### 写作对话 `/api/chat`（需认证）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/sessions` | 创建写作会话 |
 | GET | `/sessions` | 获取会话列表 |
 | GET | `/sessions/{id}/messages` | 获取会话消息历史 |
-| POST | `/send` | 发送消息并获取 AI 回复 |
+| POST | `/send` | 发送消息，同步返回 AI 回复 |
+| POST | `/send-stream` | 发送消息，SSE 流式返回 AI 回复 |
+| DELETE | `/sessions/{id}` | 删除会话 |
+| POST | `/sessions/{id}/finish` | 结束会话（触发记忆提取） |
+| POST | `/review` | AI 审核公文内容 |
 
-### 文档管理 `/api/documents`
+### 素材管理 `/api/materials`（需认证）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/export` | 导出公文为 docx 文件（GB/T 9704 格式） |
+| POST | `/upload` | 上传素材文件（docx/pdf/txt） |
+| GET | `/` | 获取素材列表，支持 `doc_type`、`keyword` 筛选 |
+| GET | `/search?query=` | 语义搜索素材 |
+| GET | `/{id}` | 获取素材详情 |
+| DELETE | `/{id}` | 删除素材 |
+| POST | `/batch-delete` | 批量删除素材 |
+| POST | `/batch-classify` | 批量重新分类 |
 
-### 用户偏好 `/api/preferences`
+### 文档管理 `/api/documents`（需认证）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/export` | 导出公文为 docx（GB/T 9704 格式） |
+| GET | `/history` | 导出历史列表 |
+| GET | `/history/{id}/download` | 重新下载历史文档 |
+
+### 用户偏好 `/api/preferences`（需认证）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/` | 获取用户所有偏好 |
-| PUT | `/` | 设置用户偏好（key-value） |
-
-### 健康检查
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/health` | 服务健康检查 |
+| PUT | `/` | 设置单个偏好 |
+| PUT | `/batch` | 批量设置偏好 |
 
 ## OpenViking 整合说明
 
-本项目通过 `ContextBridge` 适配层（HTTP 客户端模式）接入 OpenViking，避免了 OpenViking 的重量级 C++ 编译依赖。
-
-### 整合范围
+通过 `ContextBridge` 适配层（HTTP 客户端）接入 OpenViking，无需 C++ 编译依赖。
 
 **由 OpenViking 负责：**
-- 向量检索：替代原 ChromaDB，使用层级递归检索（Hierarchical Retrieval）
-- 隐式记忆：会话结束自动提取用户写作习惯、偏好等 6 类记忆
-- 会话上下文：L0/L1/L2 分层加载，按需使用 token
+- 向量检索：层级递归检索（L0摘要 → L1概览 → L2全文）
+- 隐式记忆：会话结束自动提取用户写作习惯等
+- 会话上下文：分层加载，按需使用 token
 
 **保留自有实现：**
-- 公文分类/摘要：领域特色功能，OpenViking 不具备
-- 风格学习：StyleAnalyzer 是核心差异化能力
-- docx 生成：GB/T 9704 公文格式，OpenViking 无此功能
-- 显式偏好：简单 KV 存储，SQLAlchemy 更直接
+- 公文分类/摘要、风格学习、docx 生成、显式偏好
 
-### 优雅降级
-
-所有 OpenViking 调用均包裹在 `try/except` 中。当 OpenViking 服务未启动时：
-- 素材上传正常工作，仅跳过向量入库
-- 写作生成使用 "暂无参考范文" 兜底
-- 隐式记忆为空，仅使用显式偏好
-- 系统不会报错或中断
+**优雅降级：** OpenViking 未启动时系统正常运行，语义检索和隐式记忆功能不可用，写作生成使用"暂无参考范文"兜底。
