@@ -8,8 +8,10 @@ from app.services.material_service import MaterialService
 from app.services.llm_service import LLMService
 from app.services.context_bridge import ContextBridge
 from app.prompts.classify import CLASSIFY_PROMPT
+from app.prompts.keywords import KEYWORDS_PROMPT
 from app.prompts.summarize import SUMMARIZE_PROMPT
-from app.prompts.validators import validate_classify
+from app.prompts.validators import validate_classify, validate_keywords
+from app.errors import logger
 
 router = APIRouter()
 ctx_bridge = ContextBridge()
@@ -42,15 +44,19 @@ async def upload_material(
     # 3. 猜测标题
     title = svc.guess_title(content_text, file.filename)
 
-    # 4. 提取关键词
-    keywords = svc.extract_keywords(content_text)
+    # 4. LLM 提取关键词（全文）
+    raw_keywords = llm.invoke(KEYWORDS_PROMPT.format(content=content_text)).strip()
+    keywords = validate_keywords(raw_keywords)
+    if not keywords:
+        logger.warning("LLM keywords empty, fallback to jieba for file: %s", file.filename)
+        keywords = svc.extract_keywords(content_text)
 
-    # 5. LLM分类
-    truncated = content_text[:5000]
-    raw_type = llm.invoke(CLASSIFY_PROMPT.format(content=truncated)).strip()
+    # 5. LLM分类（全文，不截断）
+    raw_type = llm.invoke(CLASSIFY_PROMPT.format(content=content_text)).strip()
     doc_type = validate_classify(raw_type)
 
     # 6. LLM摘要
+    truncated = content_text[:5000]
     summary = llm.invoke(SUMMARIZE_PROMPT.format(content=truncated)).strip()
 
     # 6.5 风格学习
@@ -114,6 +120,7 @@ def list_materials(
         skip=skip,
         limit=limit,
     )
+    svc.normalize_materials_char_count(materials)
     return {
         "items": [
             {
@@ -122,7 +129,7 @@ def list_materials(
                 "doc_type": m.doc_type,
                 "summary": m.summary,
                 "keywords": m.keywords,
-                "char_count": m.char_count,
+                "char_count": svc.calculate_char_count(m.content_text or ""),
                 "created_at": m.created_at.isoformat(),
             }
             for m in materials
@@ -156,6 +163,10 @@ def get_material(
         raise HTTPException(404, "素材不存在")
     if m.user_id != current_user.id:
         raise HTTPException(403, "无权访问该素材")
+    old_char_count = m.char_count
+    char_count = svc.normalize_material_char_count(m)
+    if old_char_count != char_count:
+        db.commit()
     return {
         "id": m.id,
         "title": m.title,
@@ -163,7 +174,7 @@ def get_material(
         "summary": m.summary,
         "keywords": m.keywords,
         "content_text": m.content_text,
-        "char_count": m.char_count,
+        "char_count": char_count,
         "original_filename": m.original_filename,
         "created_at": m.created_at.isoformat(),
     }

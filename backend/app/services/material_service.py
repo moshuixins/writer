@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -111,12 +112,37 @@ class MaterialService:
             doc_type=doc_type,
             summary=summary,
             keywords=keywords or [],
-            char_count=len(content_text),
+            char_count=self.calculate_char_count(content_text),
         )
         self.db.add(material)
         self.db.commit()
         self.db.refresh(material)
         return material
+
+    def calculate_char_count(self, text: str) -> int:
+        """统计“字数”：去除空白字符（空格/换行/制表/全角空格）后的字符数。"""
+        if not text:
+            return 0
+        normalized = text.replace("\ufeff", "")
+        normalized = re.sub(r"[\s\u00a0\u3000]+", "", normalized)
+        return len(normalized)
+
+    def normalize_material_char_count(self, material: Material) -> int:
+        """返回规范字数；若数据库中的 char_count 不一致则自动修正。"""
+        expected = self.calculate_char_count(material.content_text or "")
+        if material.char_count != expected:
+            material.char_count = expected
+        return expected
+
+    def normalize_materials_char_count(self, materials: list[Material]) -> None:
+        changed = False
+        for material in materials:
+            expected = self.calculate_char_count(material.content_text or "")
+            if material.char_count != expected:
+                material.char_count = expected
+                changed = True
+        if changed:
+            self.db.commit()
 
     def get_materials(
         self, user_id: int, doc_type: str = None,

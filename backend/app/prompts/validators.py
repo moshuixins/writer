@@ -1,6 +1,7 @@
 """LLM 返回结果校验工具"""
 import json
 import re
+from typing import Any
 from app.errors import logger
 
 VALID_DOC_TYPES = {
@@ -21,7 +22,7 @@ def validate_classify(raw: str) -> str:
     return "其他"
 
 
-def parse_json_response(raw: str) -> dict | None:
+def parse_json_response(raw: str, silent: bool = False) -> Any | None:
     """从 LLM 返回中提取 JSON，支持 markdown 代码块"""
     text = raw.strip()
     # 尝试提取 ```json ... ``` 代码块
@@ -31,8 +32,55 @@ def parse_json_response(raw: str) -> dict | None:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        logger.warning("Failed to parse JSON from LLM: %s", text[:200])
+        if not silent:
+            logger.warning("Failed to parse JSON from LLM: %s", text[:200])
         return None
+
+
+def validate_keywords(raw: str, max_keywords: int = 10) -> list[str]:
+    """校验关键词提取结果，兼容 JSON 数组/JSON 对象/分隔字符串。"""
+    text = (raw or "").strip()
+    if not text:
+        return []
+
+    values: list[Any] = []
+    data = parse_json_response(text, silent=True)
+    if isinstance(data, list):
+        values = data
+    elif isinstance(data, dict):
+        maybe = data.get("keywords")
+        if isinstance(maybe, list):
+            values = maybe
+        elif isinstance(maybe, str):
+            values = [maybe]
+
+    if not values:
+        normalized = text
+        if normalized.lower().startswith("keywords"):
+            normalized = re.sub(r"^keywords\s*[:：]\s*", "", normalized, flags=re.IGNORECASE)
+        if normalized.startswith("关键词") or normalized.startswith("关键字"):
+            normalized = re.sub(r"^(关键词|关键字)\s*[:：]\s*", "", normalized)
+        values = re.split(r"[，,、;；\n\r\t]+", normalized)
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if item is None:
+            continue
+        keyword = str(item).strip().strip("\"'`[]")
+        keyword = re.sub(r"^\d+[\.\)\、]\s*", "", keyword)
+        keyword = re.sub(r"^keywords\s*[:：]\s*", "", keyword, flags=re.IGNORECASE)
+        keyword = re.sub(r"^(关键词|关键字)\s*[:：]\s*", "", keyword)
+        if not keyword:
+            continue
+        if keyword in seen:
+            continue
+        seen.add(keyword)
+        cleaned.append(keyword)
+        if len(cleaned) >= max_keywords:
+            break
+
+    return cleaned
 
 
 def validate_writing_json(raw: str) -> dict:
