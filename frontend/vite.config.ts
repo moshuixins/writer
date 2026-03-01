@@ -38,6 +38,41 @@ export default defineConfig(({ mode, command }) => {
     build: {
       outDir: mode === 'production' ? 'dist' : `dist-${mode}`,
       sourcemap: env.VITE_BUILD_SOURCEMAP === 'true',
+      chunkSizeWarningLimit: 900,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return
+            }
+            if (id.includes('element-plus')) {
+              return 'vendor-element-plus'
+            }
+            if (id.includes('reka-ui')) {
+              return 'vendor-reka-ui'
+            }
+            if (id.includes('@iconify') || id.includes('lucide-vue-next')) {
+              return 'vendor-icons'
+            }
+            if (
+              id.includes('/vue/') || id.includes('/@vue/')
+              || id.includes('vue-router') || id.includes('pinia')
+            ) {
+              return 'vendor-vue-core'
+            }
+            if (id.includes('markdown-it') || id.includes('dompurify')) {
+              return 'vendor-markdown'
+            }
+            if (id.includes('dayjs')) {
+              return 'vendor-dayjs'
+            }
+            if (id.includes('axios')) {
+              return 'vendor-axios'
+            }
+            return 'vendor-misc'
+          },
+        },
+      },
     },
     define: {
       __SYSTEM_INFO__: JSON.stringify({
