@@ -37,3 +37,18 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     metadata_ = Column("metadata", JSON)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class SessionDraft(Base):
+    __tablename__ = "session_drafts"
+    __table_args__ = (
+        Index("ix_session_drafts_user_updated", "user_id", "updated_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    draft_json = Column(JSON, nullable=False)
+    content_text = Column(Text)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

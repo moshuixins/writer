@@ -17,6 +17,7 @@ const globalSettings: Settings.all = {
   menu: {
     baseOn: 'frontend',
     mode: 'single',
+    enableSubMenuCollapseButton: true,
   },
   toolbar: {
     breadcrumb: false,

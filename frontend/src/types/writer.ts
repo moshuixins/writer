@@ -65,3 +65,29 @@ export interface ExportDocPayload {
   doc_type: string
   session_id?: number
 }
+
+export interface WriterDraft {
+  title: string
+  recipients: string
+  body_json: Record<string, unknown>
+  signing_org: string
+  date: string
+}
+
+export interface SessionDraftResponse {
+  exists: boolean
+  session_id: number
+  updated_at: string | null
+  draft: WriterDraft
+}
+
+export interface SaveDraftPayload {
+  save_mode: 'auto' | 'manual'
+  draft: WriterDraft
+}
+
+export interface ExportEditorPayload {
+  session_id: number
+  doc_type: string
+  draft: WriterDraft
+}

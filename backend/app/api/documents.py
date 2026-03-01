@@ -1,23 +1,48 @@
-import json
+from __future__ import annotations
+
 from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from app.database import get_db
+
 from app.auth import get_current_user
+from app.database import get_db
+from app.models.document import GeneratedDocument
 from app.models.user import User
 from app.services.docx_generator import DocxGenerator
-from app.models.document import GeneratedDocument
+from app.services.draft_service import DraftService
+from app.services.editor_doc_parser import EditorDocParser
 
 router = APIRouter()
+
+
+DEFAULT_BODY_JSON = {
+    "type": "doc",
+    "content": [{"type": "paragraph"}],
+}
 
 
 class ExportRequest(BaseModel):
     content_json: dict
     title: str = ""
     doc_type: str = ""
-    session_id: int = None
+    session_id: int | None = None
+
+
+class WriterDraftPayload(BaseModel):
+    title: str = ""
+    recipients: str = ""
+    body_json: dict = Field(default_factory=lambda: DEFAULT_BODY_JSON.copy())
+    signing_org: str = ""
+    date: str = ""
+
+
+class ExportEditorRequest(BaseModel):
+    session_id: int
+    doc_type: str = ""
+    draft: WriterDraftPayload
 
 
 @router.post("/export")
@@ -26,11 +51,9 @@ def export_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """导出公文为docx文件"""
     gen = DocxGenerator()
     filepath = gen.generate(req.content_json)
 
-    # 保存记录
     doc = GeneratedDocument(
         user_id=current_user.id,
         session_id=req.session_id,
@@ -50,6 +73,53 @@ def export_document(
     )
 
 
+@router.post("/export-editor")
+def export_editor_document(
+    req: ExportEditorRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    draft_service = DraftService(db)
+    session = draft_service.validate_session_owner(
+        user_id=current_user.id,
+        session_id=req.session_id,
+    )
+
+    parser = EditorDocParser()
+    normalized_draft = parser.normalize_draft(
+        req.draft.model_dump(),
+        title_fallback=session.title or "",
+    )
+    content_json = parser.draft_to_content_json(normalized_draft)
+
+    if not content_json.get("title") and not content_json.get("body_sections"):
+        raise HTTPException(400, "文稿内容为空，无法导出")
+
+    gen = DocxGenerator()
+    filepath = gen.generate(content_json)
+
+    title = normalized_draft.get("title") or session.title or "公文"
+    doc_type = req.doc_type or session.doc_type or ""
+
+    doc = GeneratedDocument(
+        user_id=current_user.id,
+        session_id=req.session_id,
+        title=title,
+        doc_type=doc_type,
+        content_json=content_json,
+        content_text=parser.draft_to_plain_text(normalized_draft),
+        docx_file_path=filepath,
+    )
+    db.add(doc)
+    db.commit()
+
+    return FileResponse(
+        filepath,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"{title}.docx",
+    )
+
+
 @router.get("/history")
 def list_export_history(
     skip: int = Query(0, ge=0),
@@ -57,7 +127,6 @@ def list_export_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取导出历史列表"""
     base_query = db.query(GeneratedDocument).filter(
         GeneratedDocument.user_id == current_user.id,
     )
@@ -84,7 +153,6 @@ def download_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """重新下载已导出的文档"""
     doc = db.query(GeneratedDocument).filter(
         GeneratedDocument.id == doc_id,
         GeneratedDocument.user_id == current_user.id,

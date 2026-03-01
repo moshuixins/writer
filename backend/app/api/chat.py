@@ -1,22 +1,34 @@
+from __future__ import annotations
+
+import json
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-import json
-from app.database import get_db
+
 from app.auth import get_current_user
-from app.models.user import User
-from app.services.writing_service import WritingService
-from app.services.context_bridge import ContextBridge
+from app.database import get_db
 from app.errors import logger
+from app.models.user import User
+from app.services.context_bridge import ContextBridge
+from app.services.draft_service import DraftService
+from app.services.writing_service import WritingService
 
 router = APIRouter()
 ctx_bridge = ContextBridge()
 
 
+DEFAULT_BODY_JSON = {
+    "type": "doc",
+    "content": [{"type": "paragraph"}],
+}
+
+
 class CreateSessionRequest(BaseModel):
     title: str
-    doc_type: str = None
+    doc_type: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -28,19 +40,37 @@ class UpdateSessionRequest(BaseModel):
     title: str
 
 
+class WriterDraftPayload(BaseModel):
+    title: str = ""
+    recipients: str = ""
+    body_json: dict = Field(default_factory=lambda: DEFAULT_BODY_JSON.copy())
+    signing_org: str = ""
+    date: str = ""
+
+
+class SaveDraftRequest(BaseModel):
+    save_mode: Literal["auto", "manual"] = "manual"
+    draft: WriterDraftPayload
+
+
+class ReviewRequest(BaseModel):
+    content: str
+    doc_type: str = "公文"
+
+
 @router.post("/sessions")
 async def create_session(
     req: CreateSessionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建写作会话"""
     svc = WritingService(db)
     session = svc.create_session(
-        user_id=current_user.id, title=req.title, doc_type=req.doc_type,
+        user_id=current_user.id,
+        title=req.title,
+        doc_type=req.doc_type,
     )
 
-    # 同步创建 OpenViking 会话
     try:
         ov_session = await ctx_bridge.create_session()
         session.ov_session_id = ov_session.get("session_id", "")
@@ -62,7 +92,6 @@ def update_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """重命名会话"""
     from app.models.chat import ChatSession
 
     title = (req.title or "").strip()
@@ -93,13 +122,14 @@ def list_sessions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取会话列表"""
     svc = WritingService(db)
     sessions = svc.get_sessions(user_id=current_user.id)
     return [
         {
-            "id": s.id, "title": s.title,
-            "doc_type": s.doc_type, "status": s.status,
+            "id": s.id,
+            "title": s.title,
+            "doc_type": s.doc_type,
+            "status": s.status,
             "created_at": s.created_at.isoformat(),
         }
         for s in sessions
@@ -112,24 +142,63 @@ def get_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取会话消息历史"""
     from app.models.chat import ChatSession
+
     session = db.query(ChatSession).filter(
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id,
     ).first()
     if not session:
         raise HTTPException(404, "会话不存在")
+
     svc = WritingService(db)
     msgs = svc.get_session_messages(session_id)
     return [
         {
-            "id": m.id, "role": m.role,
+            "id": m.id,
+            "role": m.role,
             "content": m.content,
             "created_at": m.created_at.isoformat(),
         }
         for m in msgs
     ]
+
+
+@router.get("/sessions/{session_id}/draft")
+def get_session_draft(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    draft_service = DraftService(db)
+    payload = draft_service.get_or_default_draft(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+    return payload
+
+
+@router.put("/sessions/{session_id}/draft")
+def save_session_draft(
+    session_id: int,
+    req: SaveDraftRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    draft_service = DraftService(db)
+    row, normalized_draft = draft_service.upsert_draft(
+        user_id=current_user.id,
+        session_id=session_id,
+        draft=req.draft.model_dump(),
+        save_mode=req.save_mode,
+    )
+    return {
+        "exists": True,
+        "session_id": session_id,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "save_mode": req.save_mode,
+        "draft": normalized_draft,
+    }
 
 
 @router.post("/send")
@@ -138,8 +207,8 @@ async def send_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """发送消息并获取AI回复（HTTP方式）"""
     from app.models.chat import ChatSession
+
     session = db.query(ChatSession).filter(
         ChatSession.id == req.session_id,
         ChatSession.user_id == current_user.id,
@@ -149,10 +218,8 @@ async def send_message(
 
     svc = WritingService(db)
 
-    # 保存用户消息
     svc.add_message(req.session_id, "user", req.message)
 
-    # 同步消息到 OpenViking
     ov_sid = getattr(session, "ov_session_id", None)
     if ov_sid:
         try:
@@ -160,20 +227,15 @@ async def send_message(
         except Exception:
             pass
 
-    # 判断是否是首条消息（需要引导）
     msgs = svc.get_session_messages(req.session_id)
     if len(msgs) <= 1:
         doc_type = session.doc_type or "公文"
         reply = svc.get_guidance(req.message, doc_type)
     else:
-        reply = await svc.generate(
-            req.session_id, req.message,
-        )
+        reply = await svc.generate(req.session_id, req.message)
 
-    # 保存AI回复
     svc.add_message(req.session_id, "assistant", reply)
 
-    # 同步AI回复到 OpenViking
     if ov_sid:
         try:
             await ctx_bridge.add_message(ov_sid, "assistant", reply)
@@ -189,8 +251,8 @@ async def send_message_stream(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """流式发送消息，SSE 逐字返回AI回复"""
     from app.models.chat import ChatSession
+
     session = db.query(ChatSession).filter(
         ChatSession.id == req.session_id,
         ChatSession.user_id == current_user.id,
@@ -201,7 +263,6 @@ async def send_message_stream(
     svc = WritingService(db)
     svc.add_message(req.session_id, "user", req.message)
 
-    # 同步消息到 OpenViking
     ov_sid = getattr(session, "ov_session_id", None)
     if ov_sid:
         try:
@@ -209,7 +270,6 @@ async def send_message_stream(
         except Exception:
             pass
 
-    # 判断是否首条消息
     msgs = svc.get_session_messages(req.session_id)
     is_first = len(msgs) <= 1
     doc_type = session.doc_type or "公文"
@@ -231,10 +291,8 @@ async def send_message_stream(
             err = json.dumps({"error": str(e)}, ensure_ascii=False)
             yield f"data: {err}\n\n"
 
-        # 保存完整回复
         svc.add_message(req.session_id, "assistant", full_reply)
 
-        # 同步到 OpenViking
         if ov_sid:
             try:
                 await ctx_bridge.add_message(ov_sid, "assistant", full_reply)
@@ -256,8 +314,8 @@ async def delete_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """删除会话及其消息"""
-    from app.models.chat import ChatSession, ChatMessage
+    from app.models.chat import ChatMessage, ChatSession
+
     session = db.query(ChatSession).filter(
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id,
@@ -265,7 +323,6 @@ async def delete_session(
     if not session:
         raise HTTPException(404, "会话不存在")
 
-    # 提交 OpenViking 记忆提取
     if session.ov_session_id:
         try:
             await ctx_bridge.commit_session(session.ov_session_id)
@@ -285,8 +342,8 @@ async def finish_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """结束会话，触发 OpenViking 记忆提取"""
     from app.models.chat import ChatSession
+
     session = db.query(ChatSession).filter(
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id,
@@ -304,12 +361,7 @@ async def finish_session(
         except Exception as e:
             logger.warning("OV commit failed: %s", e)
 
-    return {"message": "会话已结束，记忆已提取"}
-
-
-class ReviewRequest(BaseModel):
-    content: str
-    doc_type: str = "公文"
+    return {"message": "会话已结束，记忆已提交"}
 
 
 @router.post("/review")
@@ -318,6 +370,5 @@ def review_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """对公文内容进行质量自检"""
     svc = WritingService(db)
     return svc.review(req.content, req.doc_type)

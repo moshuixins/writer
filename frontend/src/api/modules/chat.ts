@@ -1,5 +1,6 @@
 import api from '../index'
-import type { ChatMessage, ChatSession } from '@/types/writer'
+import type { AxiosRequestConfig } from 'axios'
+import type { ChatMessage, ChatSession, SaveDraftPayload, SessionDraftResponse } from '@/types/writer'
 
 export default {
   getSessions: () => api.get<ChatSession[]>('/api/chat/sessions'),
@@ -12,6 +13,12 @@ export default {
 
   getMessages: (sessionId: number) =>
     api.get<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`),
+
+  getDraft: (sessionId: number) =>
+    api.get<SessionDraftResponse>(`/api/chat/sessions/${sessionId}/draft`),
+
+  saveDraft: (sessionId: number, data: SaveDraftPayload, config?: AxiosRequestConfig) =>
+    api.put<SessionDraftResponse>(`/api/chat/sessions/${sessionId}/draft`, data, config),
 
   deleteSession: (id: number) => api.delete(`/api/chat/sessions/${id}`),
 }

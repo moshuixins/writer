@@ -14,14 +14,15 @@
           <p>暂无导出记录</p>
         </div>
       </template>
-      <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="doc_type" label="类型" width="100">
+
+      <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
+      <el-table-column prop="doc_type" label="类型" width="120">
         <template #default="{ row }">
           <el-tag size="small" type="info">{{ row.doc_type || '公文' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="version" label="版本" width="80" align="center" />
-      <el-table-column label="导出时间" width="180">
+      <el-table-column prop="version" label="版本" width="90" align="center" />
+      <el-table-column label="导出时间" width="190">
         <template #default="{ row }">
           {{ formatDate(row.created_at) }}
         </template>
@@ -48,12 +49,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { FolderOpened } from '@element-plus/icons-vue'
 import apiDocuments from '@/api/modules/documents'
-import dayjs from '@/utils/dayjs'
 import type { ExportDoc } from '@/types/writer'
+import dayjs from '@/utils/dayjs'
 
 const docs = ref<ExportDoc[]>([])
 const loading = ref(false)
@@ -88,7 +89,7 @@ async function download(row: ExportDoc) {
     a.click()
     URL.revokeObjectURL(url)
   } catch {
-    ElMessage.error('下载失败，文件可能已被清理')
+    ElMessage.error('下载失败，文件可能已失效')
   }
 }
 
@@ -99,24 +100,66 @@ function formatDate(value: string) {
 function onPageSizeChange(size: number) {
   pageSize.value = size
   currentPage.value = 1
-  loadHistory()
+  void loadHistory()
 }
 
-onMounted(loadHistory)
+onMounted(() => {
+  void loadHistory()
+})
 </script>
 
 <style scoped>
-.history-page { padding: 24px; }
-.page-header { margin-bottom: 16px; }
-.page-title-wrap { display: flex; flex-direction: column; gap: 6px; }
-.page-title { margin: 0; font-size: 22px; font-weight: 700; color: var(--el-text-color-primary); }
-.page-subtitle { margin: 0; font-size: 13px; color: var(--el-text-color-secondary); }
-.history-table { border-radius: 8px; overflow: hidden; }
-.empty-state { padding: 40px; text-align: center; color: var(--el-text-color-secondary); }
-.empty-state p { margin: 12px 0 0; }
-.pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
+.history-page {
+  padding: 24px;
+}
+
+.page-header {
+  margin-bottom: 16px;
+}
+
+.page-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.page-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.history-table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.empty-state {
+  padding: 40px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+}
+
+.empty-state p {
+  margin: 12px 0 0;
+}
+
+.pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
 
 @media (max-width: 768px) {
-  .history-page { padding: 16px; }
+  .history-page {
+    padding: 16px;
+  }
 }
 </style>
