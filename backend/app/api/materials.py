@@ -102,6 +102,11 @@ def list_materials(
 ):
     """获取素材列表"""
     svc = MaterialService(db)
+    total = svc.count_materials(
+        user_id=current_user.id,
+        doc_type=doc_type,
+        keyword=keyword,
+    )
     materials = svc.get_materials(
         user_id=current_user.id,
         doc_type=doc_type,
@@ -109,18 +114,21 @@ def list_materials(
         skip=skip,
         limit=limit,
     )
-    return [
-        {
-            "id": m.id,
-            "title": m.title,
-            "doc_type": m.doc_type,
-            "summary": m.summary,
-            "keywords": m.keywords,
-            "char_count": m.char_count,
-            "created_at": m.created_at.isoformat(),
-        }
-        for m in materials
-    ]
+    return {
+        "items": [
+            {
+                "id": m.id,
+                "title": m.title,
+                "doc_type": m.doc_type,
+                "summary": m.summary,
+                "keywords": m.keywords,
+                "char_count": m.char_count,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in materials
+        ],
+        "total": total,
+    }
 
 
 @router.get("/search")

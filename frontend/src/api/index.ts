@@ -11,6 +11,7 @@ declare module 'axios' {
   export interface AxiosRequestConfig {
     retry?: boolean
     retryCount?: number
+    skipErrorToast?: boolean
   }
 }
 
@@ -42,14 +43,15 @@ api.interceptors.request.use(
 
 // 处理错误信息的函数
 function handleError(error: any) {
+  const status = error.response?.status ?? error.status
   const url = error.config?.url || ''
   const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register')
 
-  if (error.status === 401 && !isAuthEndpoint) {
+  if (status === 401 && !isAuthEndpoint) {
     // token 过期，跳转登录页（登录/注册接口的 401 不触发登出）
     useUserStore().requestLogout()
   }
-  else {
+  else if (!error.config?.skipErrorToast) {
     // 优先使用后端返回的 detail 信息
     let message = error.response?.data?.detail || error.message
     if (message === 'Network Error') {

@@ -1,4 +1,6 @@
 import api from '../index'
+import type { AxiosRequestConfig } from 'axios'
+import type { UserInfo } from '@/types/writer'
 
 export default {
   login: (data: { account: string, password: string }) =>
@@ -15,8 +17,8 @@ export default {
   passwordEdit: (data: { password: string, newPassword: string }) =>
     api.post('/api/auth/change-password', data),
 
-  getProfile: () => api.get('/api/auth/profile'),
+  getProfile: (config?: AxiosRequestConfig) => api.get<UserInfo>('/api/auth/profile', config),
 
-  updateProfile: (data: { display_name?: string, department?: string }) =>
-    api.put('/api/auth/profile', data),
+  updateProfile: (data: { display_name?: string, department?: string }, config?: AxiosRequestConfig) =>
+    api.put('/api/auth/profile', data, config),
 }

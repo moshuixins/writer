@@ -1,8 +1,9 @@
 import api from '../index'
+import type { Material, MaterialListParams, PagedResult } from '@/types/writer'
 
 export default {
-  list: (params: { skip?: number, limit?: number, doc_type?: string, keyword?: string }) =>
-    api.get('/api/materials', { params }),
+  list: (params: MaterialListParams) =>
+    api.get<PagedResult<Material>>('/api/materials', { params }),
 
   uploadUrl: '/api/materials/upload',
 

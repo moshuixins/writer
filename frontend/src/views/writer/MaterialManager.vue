@@ -1,7 +1,10 @@
 <template>
   <div class="material-manager">
     <div class="header">
-      <h2>素材管理</h2>
+      <div class="page-title-wrap">
+        <h2 class="page-title">素材管理</h2>
+        <p class="page-subtitle">上传并管理历史公文素材，用于检索增强与写作参考</p>
+      </div>
       <el-upload
         :action="uploadUrl"
         :headers="uploadHeaders"
@@ -28,7 +31,7 @@
         clearable
         @input="onSearchInput"
         @clear="resetAndLoad"
-        style="width: 240px; margin-left: 12px"
+        class="keyword-input"
       />
     </div>
 
@@ -57,7 +60,11 @@
         </template>
       </el-table-column>
       <el-table-column prop="char_count" label="字数" width="80" align="right" />
-      <el-table-column prop="created_at" label="上传时间" width="180" />
+      <el-table-column label="上传时间" width="180">
+        <template #default="{ row }">
+          {{ formatDate(row.created_at) }}
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="showDetail(row)">详情</el-button>
@@ -69,22 +76,26 @@
     <div class="pagination" v-if="total > pageSize">
       <el-pagination
         v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
         :page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
         :total="total"
-        layout="total, prev, pager, next"
+        layout="total, sizes, prev, pager, next"
         @current-change="loadMaterials"
+        @size-change="onPageSizeChange"
       />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
 import apiMaterials from '@/api/modules/materials'
 import { DOC_TYPES } from '@/utils/constants'
-import type { Material } from '@/types/writer'
+import dayjs from '@/utils/dayjs'
+import type { Material, MaterialListParams } from '@/types/writer'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -95,7 +106,7 @@ const uploading = ref(false)
 const selectedIds = ref<number[]>([])
 const batchDocType = ref('')
 const currentPage = ref(1)
-const pageSize = 20
+const pageSize = ref(20)
 const total = ref(0)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -113,14 +124,16 @@ const filters = reactive({
 async function loadMaterials() {
   loading.value = true
   try {
-    const params: any = { skip: (currentPage.value - 1) * pageSize, limit: pageSize }
+    const params: MaterialListParams = { skip: (currentPage.value - 1) * pageSize.value, limit: pageSize.value }
     if (filters.docType) params.doc_type = filters.docType
     if (filters.keyword) params.keyword = filters.keyword
     const { data } = await apiMaterials.list(params)
-    materials.value = data
-    total.value = data.length < pageSize && currentPage.value === 1
-      ? data.length
-      : (currentPage.value * pageSize) + (data.length === pageSize ? 1 : 0)
+    materials.value = data.items
+    total.value = data.total
+    selectedIds.value = []
+  } catch {
+    materials.value = []
+    total.value = 0
   } finally {
     loading.value = false
   }
@@ -134,6 +147,12 @@ function resetAndLoad() {
 function onSearchInput() {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(resetAndLoad, 400)
+}
+
+function onPageSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadMaterials()
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
@@ -164,7 +183,7 @@ function onUploadError() {
   ElMessage.error('上传失败')
 }
 
-function showDetail(row: any) {
+function showDetail(row: Material) {
   const keywords = (row.keywords || []).join('、')
   ElMessageBox.alert(
     `类型：${row.doc_type}\n摘要：${row.summary || '无'}\n关键词：${keywords}`,
@@ -190,8 +209,8 @@ async function deleteMaterial(id: number) {
   }
 }
 
-function onSelectionChange(rows: any[]) {
-  selectedIds.value = rows.map((r: any) => r.id)
+function onSelectionChange(rows: Material[]) {
+  selectedIds.value = rows.map(r => r.id)
 }
 
 async function batchDelete() {
@@ -225,14 +244,28 @@ async function batchClassify() {
   }
 }
 
+function formatDate(value: string) {
+  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-'
+}
+
+onUnmounted(() => {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+})
+
 onMounted(loadMaterials)
 </script>
 
 <style scoped>
 .material-manager { padding: 24px; }
 .header { display: flex; justify-content: space-between; align-items: center; }
-.header h2 { margin: 0; font-size: 20px; color: var(--el-text-color-primary); }
+.page-title-wrap { display: flex; flex-direction: column; gap: 6px; }
+.page-title { margin: 0; font-size: 22px; font-weight: 700; color: var(--el-text-color-primary); }
+.page-subtitle { margin: 0; font-size: 13px; color: var(--el-text-color-secondary); }
 .filters { margin-top: 16px; display: flex; align-items: center; }
+.keyword-input { width: 240px; margin-left: 12px; }
 .batch-actions {
   margin-top: 12px; display: flex; align-items: center; gap: 8px;
   padding: 10px 14px; background: var(--el-color-warning-light-9);
@@ -243,4 +276,11 @@ onMounted(loadMaterials)
 .empty-state { padding: 40px; text-align: center; color: var(--el-text-color-secondary); }
 .empty-state p { margin: 12px 0 0; }
 .pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
+
+@media (max-width: 768px) {
+  .material-manager { padding: 16px; }
+  .header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .filters { flex-direction: column; align-items: stretch; gap: 8px; }
+  .keyword-input { margin-left: 0; width: 100%; }
+}
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElMessage } from 'element-plus'
 import { toast } from 'vue-sonner'
 import apiUser from '@/api/modules/user'
 import EditPasswordForm from '@/components/AccountForm/EditPasswordForm.vue'
@@ -26,30 +27,37 @@ const tabs = ref([
 
 async function loadProfile() {
   try {
-    const { data } = await apiUser.getProfile()
+    const { data } = await apiUser.getProfile({ skipErrorToast: true })
     Object.assign(profile, {
       username: data?.username || '',
       display_name: data?.display_name || '',
       department: data?.department || '',
     })
   }
-  catch {}
+  catch {
+    ElMessage.error('加载个人资料失败，请稍后重试')
+  }
 }
 
 async function saveProfile() {
   savingProfile.value = true
   try {
-    const { data } = await apiUser.updateProfile({
-      display_name: profile.display_name,
-      department: profile.department,
-    })
+    const { data } = await apiUser.updateProfile(
+      {
+        display_name: profile.display_name,
+        department: profile.department,
+      },
+      { skipErrorToast: true },
+    )
     if (data?.user) {
       localStorage.setItem('user', JSON.stringify(data.user))
       userStore.user = data.user
     }
     toast.success('个人资料已保存')
   }
-  catch {}
+  catch {
+    ElMessage.error('保存失败，请稍后重试')
+  }
   finally {
     savingProfile.value = false
   }

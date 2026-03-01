@@ -6,6 +6,18 @@ export interface ChatSession {
   created_at: string
 }
 
+export interface PagedResult<T> {
+  items: T[]
+  total: number
+}
+
+export interface MaterialListParams {
+  skip?: number
+  limit?: number
+  doc_type?: string
+  keyword?: string
+}
+
 export interface ChatMessage {
   id: number | string
   role: string
@@ -38,4 +50,18 @@ export interface UserInfo {
   username: string
   display_name: string
   department: string
+}
+
+export interface Preferences {
+  signature_org: string
+  default_tone: 'formal' | 'semi-formal'
+  default_recipients: string
+  avoid_phrases: string
+}
+
+export interface ExportDocPayload {
+  content_json: Record<string, unknown>
+  title: string
+  doc_type: string
+  session_id?: number
 }

@@ -1,5 +1,12 @@
 <template>
   <div class="settings-page">
+    <div class="page-header">
+      <div class="page-title-wrap">
+        <h2 class="page-title">写作偏好</h2>
+        <p class="page-subtitle">设置单位署名、语气和常用用词，AI 生成时将自动参考</p>
+      </div>
+    </div>
+
     <el-card shadow="never" class="settings-card">
       <template #header>
         <span class="card-title">写作偏好</span>
@@ -33,10 +40,11 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import apiPreferences from '@/api/modules/preferences'
+import type { Preferences } from '@/types/writer'
 
 const savingPrefs = ref(false)
 
-const prefs = reactive({
+const prefs = reactive<Preferences>({
   signature_org: '',
   default_tone: 'formal',
   default_recipients: '',
@@ -45,19 +53,23 @@ const prefs = reactive({
 
 async function loadPrefs() {
   try {
-    const { data } = await apiPreferences.get()
+    const { data } = await apiPreferences.get({ skipErrorToast: true })
     Object.assign(prefs, data)
   }
-  catch {}
+  catch {
+    ElMessage.error('加载偏好失败，请刷新重试')
+  }
 }
 
 async function savePrefs() {
   savingPrefs.value = true
   try {
-    await apiPreferences.save({ ...prefs })
+    await apiPreferences.save({ ...prefs }, { skipErrorToast: true })
     ElMessage.success('偏好已保存')
   }
-  catch {}
+  catch {
+    ElMessage.error('保存失败，请稍后重试')
+  }
   finally {
     savingPrefs.value = false
   }
@@ -76,6 +88,31 @@ onMounted(() => {
   gap: 20px;
 }
 
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.page-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
 .settings-card :deep(.el-card__header) {
   display: flex;
   align-items: baseline;
@@ -92,5 +129,11 @@ onMounted(() => {
 .card-desc {
   font-size: 13px;
   color: var(--el-text-color-secondary);
+}
+
+@media (max-width: 768px) {
+  .settings-page {
+    padding: 16px;
+  }
 }
 </style>

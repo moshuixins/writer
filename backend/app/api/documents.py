@@ -58,19 +58,24 @@ def list_export_history(
     current_user: User = Depends(get_current_user),
 ):
     """获取导出历史列表"""
-    docs = db.query(GeneratedDocument).filter(
+    base_query = db.query(GeneratedDocument).filter(
         GeneratedDocument.user_id == current_user.id,
-    ).order_by(GeneratedDocument.created_at.desc()).offset(skip).limit(limit).all()
-    return [
-        {
-            "id": d.id,
-            "title": d.title,
-            "doc_type": d.doc_type,
-            "version": d.version,
-            "created_at": d.created_at.isoformat(),
-        }
-        for d in docs
-    ]
+    )
+    total = base_query.count()
+    docs = base_query.order_by(GeneratedDocument.created_at.desc()).offset(skip).limit(limit).all()
+    return {
+        "items": [
+            {
+                "id": d.id,
+                "title": d.title,
+                "doc_type": d.doc_type,
+                "version": d.version,
+                "created_at": d.created_at.isoformat(),
+            }
+            for d in docs
+        ],
+        "total": total,
+    }
 
 
 @router.get("/history/{doc_id}/download")

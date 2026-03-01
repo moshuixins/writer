@@ -24,6 +24,10 @@ class ChatRequest(BaseModel):
     session_id: int
 
 
+class UpdateSessionRequest(BaseModel):
+    title: str
+
+
 @router.post("/sessions")
 async def create_session(
     req: CreateSessionRequest,
@@ -48,6 +52,39 @@ async def create_session(
         "id": session.id,
         "title": session.title,
         "doc_type": session.doc_type,
+    }
+
+
+@router.put("/sessions/{session_id}")
+def update_session(
+    session_id: int,
+    req: UpdateSessionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """重命名会话"""
+    from app.models.chat import ChatSession
+
+    title = (req.title or "").strip()
+    if not title:
+        raise HTTPException(400, "标题不能为空")
+
+    session = db.query(ChatSession).filter(
+        ChatSession.id == session_id,
+        ChatSession.user_id == current_user.id,
+    ).first()
+    if not session:
+        raise HTTPException(404, "会话不存在")
+
+    session.title = title
+    db.commit()
+    db.refresh(session)
+    return {
+        "id": session.id,
+        "title": session.title,
+        "doc_type": session.doc_type,
+        "status": session.status,
+        "created_at": session.created_at.isoformat(),
     }
 
 

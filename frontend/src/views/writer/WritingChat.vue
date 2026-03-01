@@ -1,9 +1,21 @@
 <template>
   <div class="writing-chat">
-    <div class="sidebar">
-      <el-button type="primary" @click="showNewSession = true" class="new-btn">
+    <div v-if="mobileSidebarOpen" class="sidebar-mask" @click="mobileSidebarOpen = false" />
+
+    <el-button class="mobile-session-trigger" type="primary" circle @click="mobileSidebarOpen = true">
+      <el-icon><Menu /></el-icon>
+    </el-button>
+
+    <div class="sidebar" :class="{ 'is-mobile-open': mobileSidebarOpen }">
+      <el-button type="primary" @click="openNewSession" class="new-btn">
         <el-icon style="margin-right:6px"><Plus /></el-icon>新建写作
       </el-button>
+      <el-input
+        v-model="sessionKeyword"
+        class="session-search"
+        clearable
+        placeholder="搜索会话标题"
+      />
       <div class="session-list">
         <template v-if="loadingSessions">
           <el-skeleton :rows="3" animated style="padding: 8px" />
@@ -11,9 +23,12 @@
         <template v-else-if="sessions.length === 0">
           <div class="empty-tip">暂无会话，点击上方新建</div>
         </template>
+        <template v-else-if="filteredSessions.length === 0">
+          <div class="empty-tip">没有匹配的会话</div>
+        </template>
         <div
           v-else
-          v-for="s in sessions"
+          v-for="s in filteredSessions"
           :key="s.id"
           class="session-item"
           :class="{ active: currentSession?.id === s.id }"
@@ -21,15 +36,22 @@
         >
           <div class="session-info">
             <span class="session-title">{{ s.title }}</span>
+            <span class="session-time">{{ formatDate(s.created_at) }}</span>
             <el-tag v-if="s.doc_type" size="small" type="info" class="session-tag">{{ s.doc_type }}</el-tag>
           </div>
-          <el-icon class="delete-btn" @click.stop="deleteSession(s.id)"><Close /></el-icon>
+          <div class="session-actions">
+            <el-icon class="edit-btn" @click.stop="renameSession(s)"><Edit /></el-icon>
+            <el-icon class="delete-btn" @click.stop="deleteSession(s.id)"><Close /></el-icon>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="chat-area">
       <div class="chat-header" v-if="currentSession">
+        <el-button text class="session-toggle-btn" @click="mobileSidebarOpen = true">
+          <el-icon><Menu /></el-icon>
+        </el-button>
         <h3>{{ currentSession.title }}</h3>
         <el-tag v-if="currentSession.doc_type" size="small">{{ currentSession.doc_type }}</el-tag>
       </div>
@@ -84,10 +106,13 @@
           resize="none"
         />
         <div class="actions">
-          <el-button type="primary" @click="sendMessage" :loading="sending" :disabled="!inputText.trim()">
+          <el-button type="primary" @click="sendMessage" :loading="sending" :disabled="sending || !inputText.trim()">
             发送
           </el-button>
-          <el-button @click="exportDoc" :disabled="!lastContent">导出 docx</el-button>
+          <el-button v-if="sending" type="danger" plain @click="stopGenerating">
+            停止生成
+          </el-button>
+          <el-button @click="exportDoc" :disabled="sending || !lastContent">导出 docx</el-button>
         </div>
       </div>
     </div>
@@ -112,14 +137,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { computed, ref, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close, Plus, Monitor, User, CopyDocument, ChatDotRound, EditPen } from '@element-plus/icons-vue'
+import { Close, Plus, Monitor, User, CopyDocument, ChatDotRound, EditPen, Menu, Edit } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
+import api from '@/api'
 import apiChat from '@/api/modules/chat'
 import apiDocuments from '@/api/modules/documents'
 import { DOC_TYPES } from '@/utils/constants'
+import dayjs from '@/utils/dayjs'
 import type { ChatSession, ChatMessage } from '@/types/writer'
 import { useUserStore } from '@/store/modules/user'
 
@@ -155,6 +182,32 @@ const lastContent = ref('')
 const messagesRef = ref<HTMLElement>()
 const loadingSessions = ref(false)
 const loadingMessages = ref(false)
+const mobileSidebarOpen = ref(false)
+const sessionKeyword = ref('')
+const abortController = ref<AbortController | null>(null)
+
+const filteredSessions = computed(() => {
+  const keyword = sessionKeyword.value.trim().toLowerCase()
+  if (!keyword) {
+    return sessions.value
+  }
+  return sessions.value.filter((s) => {
+    return (s.title || '').toLowerCase().includes(keyword)
+  })
+})
+
+function getStreamUrl() {
+  const baseURL = `${api.defaults.baseURL || ''}`.trim()
+  if (!baseURL) {
+    return '/api/chat/send-stream'
+  }
+  return `${baseURL.replace(/\/+$/, '')}/api/chat/send-stream`
+}
+
+function getLatestAssistantContent(list: ChatMessage[]) {
+  const latest = [...list].reverse().find(m => m.role === 'assistant' && !!m.content)
+  return latest?.content || ''
+}
 
 async function createSession() {
   if (!newTitle.value.trim()) {
@@ -174,11 +227,17 @@ async function createSession() {
     showNewSession.value = false
     newTitle.value = ''
     newDocType.value = ''
+    mobileSidebarOpen.value = false
   } catch {
     ElMessage.error('创建失败')
   } finally {
     creating.value = false
   }
+}
+
+function openNewSession() {
+  showNewSession.value = true
+  mobileSidebarOpen.value = false
 }
 
 async function loadSessions() {
@@ -195,21 +254,26 @@ async function loadSessions() {
 
 async function selectSession(s: ChatSession) {
   currentSession.value = s
+  mobileSidebarOpen.value = false
   loadingMessages.value = true
   try {
     const { data } = await apiChat.getMessages(s.id)
     messages.value = data
+    lastContent.value = getLatestAssistantContent(data)
     scrollToBottom()
   } catch {
     messages.value = []
+    lastContent.value = ''
   } finally {
     loadingMessages.value = false
   }
 }
 
 async function sendMessage() {
-  if (!inputText.value.trim() || !currentSession.value) return
+  if (sending.value || !inputText.value.trim() || !currentSession.value) return
   sending.value = true
+  abortController.value = new AbortController()
+  lastContent.value = ''
   const text = inputText.value
   inputText.value = ''
 
@@ -223,8 +287,9 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const resp = await fetch('/api/chat/send-stream', {
+    const resp = await fetch(getStreamUrl(), {
       method: 'POST',
+      signal: abortController.value.signal,
       headers: {
         'Content-Type': 'application/json',
         ...(userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}),
@@ -242,6 +307,23 @@ async function sendMessage() {
     const reader = resp.body!.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    const processLine = (line: string) => {
+      if (!line.startsWith('data: ')) return
+      const payload = line.slice(6).trim()
+      if (payload === '[DONE]') return
+      const parsed = JSON.parse(payload)
+      if (parsed.error) {
+        throw new Error(parsed.error)
+      }
+      if (parsed.chunk) {
+        assistantMsg.content += parsed.chunk
+        const idx = messages.value.findIndex(m => m.id === assistantId)
+        if (idx !== -1) {
+          messages.value[idx] = { ...assistantMsg }
+        }
+        scrollToBottom()
+      }
+    }
 
     while (true) {
       const { done, value } = await reader.read()
@@ -252,37 +334,52 @@ async function sendMessage() {
       buffer = lines.pop() || ''
 
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        const payload = line.slice(6).trim()
-        if (payload === '[DONE]') continue
         try {
-          const parsed = JSON.parse(payload)
-          if (parsed.error) {
-            ElMessage.error(parsed.error)
-            break
+          processLine(line)
+        } catch (error: any) {
+          // 忽略非 JSON 行；SSE 错误会被 processLine 显式抛出
+          if (line.startsWith('data: ')) {
+            throw error instanceof Error ? error : new Error('生成失败，请稍后重试')
           }
-          if (parsed.chunk) {
-            assistantMsg.content += parsed.chunk
-            const idx = messages.value.findIndex(m => m.id === assistantId)
-            if (idx !== -1) {
-              messages.value[idx] = { ...assistantMsg }
-            }
-            scrollToBottom()
-          }
-        } catch {
-          // ignore parse failures
         }
       }
     }
 
+    if (buffer.trim()) {
+      try {
+        processLine(buffer.trim())
+      } catch (error: any) {
+        throw error instanceof Error ? error : new Error('生成失败，请稍后重试')
+      }
+    }
+
     lastContent.value = assistantMsg.content
-  } catch {
-    messages.value = messages.value.filter(m => m.id !== tempId && m.id !== assistantId)
-    inputText.value = text
-    ElMessage.error('发送失败，请重试')
+  } catch (error: any) {
+    const isAbort = error?.name === 'AbortError'
+    if (isAbort) {
+      const idx = messages.value.findIndex(m => m.id === assistantId)
+      if (idx !== -1) {
+        if (assistantMsg.content.trim()) {
+          messages.value[idx] = { ...assistantMsg }
+        } else {
+          messages.value.splice(idx, 1)
+        }
+      }
+      lastContent.value = ''
+      ElMessage.info('已停止生成')
+    } else {
+      messages.value = messages.value.filter(m => m.id !== tempId && m.id !== assistantId)
+      inputText.value = text
+      ElMessage.error(error?.message || '发送失败，请重试')
+    }
   } finally {
+    abortController.value = null
     sending.value = false
   }
+}
+
+function stopGenerating() {
+  abortController.value?.abort()
 }
 
 async function exportDoc() {
@@ -344,6 +441,44 @@ async function deleteSession(id: number) {
   }
 }
 
+async function renameSession(session: ChatSession) {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的会话标题', '重命名会话', {
+      inputValue: session.title,
+      inputPlaceholder: '请输入会话标题',
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValidator: (val) => {
+        if (!val || !val.trim()) {
+          return '标题不能为空'
+        }
+        if (val.trim().length > 50) {
+          return '标题不能超过50个字符'
+        }
+        return true
+      },
+    })
+    const title = value.trim()
+    if (title === session.title) {
+      return
+    }
+    const { data } = await apiChat.updateSession(session.id, { title })
+    const idx = sessions.value.findIndex(s => s.id === session.id)
+    if (idx !== -1) {
+      sessions.value[idx] = { ...sessions.value[idx], ...data }
+    }
+    if (currentSession.value?.id === session.id) {
+      currentSession.value = { ...currentSession.value, ...data }
+    }
+    ElMessage.success('会话已重命名')
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') {
+      return
+    }
+    ElMessage.error('重命名失败，请稍后重试')
+  }
+}
+
 function scrollToBottom() {
   nextTick(() => {
     if (messagesRef.value) {
@@ -352,11 +487,19 @@ function scrollToBottom() {
   })
 }
 
+function formatDate(value: string) {
+  return value ? dayjs(value).format('MM-DD HH:mm') : '-'
+}
+
 onMounted(loadSessions)
+
+onBeforeUnmount(() => {
+  abortController.value?.abort()
+})
 </script>
 
 <style scoped>
-.writing-chat { display: flex; height: calc(100vh - var(--g-header-height)); }
+.writing-chat { display: flex; height: calc(100vh - var(--g-header-height)); position: relative; }
 
 /* 侧边栏 */
 .sidebar {
@@ -364,25 +507,42 @@ onMounted(loadSessions)
   overflow-y: auto; background: var(--el-bg-color-page);
 }
 .new-btn { width: 100%; border-radius: 8px; }
+.session-search { margin-top: 10px; width: 100%; }
 .session-list { margin-top: 16px; }
 .session-item {
-  padding: 10px 32px 10px 12px; cursor: pointer; border-radius: 8px;
+  padding: 10px 12px; cursor: pointer; border-radius: 8px;
   margin-bottom: 4px; position: relative; transition: background 0.2s;
+  display: flex; align-items: center; gap: 8px;
 }
 .session-item:hover { background: var(--el-color-primary-light-9); }
 .session-item.active { background: var(--el-color-primary-light-8); }
-.session-info { display: flex; flex-direction: column; gap: 4px; }
+.session-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .session-title {
   font-size: 14px; color: var(--el-text-color-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.session-tag { align-self: flex-start; }
-.delete-btn {
-  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-  color: var(--el-text-color-placeholder); cursor: pointer; font-size: 14px;
-  opacity: 0; transition: opacity 0.2s;
+.session-time {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
-.session-item:hover .delete-btn { opacity: 1; }
+.session-tag { align-self: flex-start; }
+.session-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.delete-btn {
+  color: var(--el-text-color-placeholder); cursor: pointer; font-size: 14px;
+}
+.edit-btn {
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+  font-size: 14px;
+}
+.session-item:hover .session-actions { opacity: 1; }
+.edit-btn:hover { color: var(--el-color-primary); }
 .delete-btn:hover { color: var(--el-color-danger); }
 
 /* 聊天区域 */
@@ -391,6 +551,7 @@ onMounted(loadSessions)
   padding: 12px 20px; border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex; align-items: center; gap: 10px; background: var(--el-bg-color);
 }
+.session-toggle-btn { display: none; margin-right: -6px; }
 .chat-header h3 { margin: 0; font-size: 16px; color: var(--el-text-color-primary); }
 .messages { flex: 1; overflow-y: auto; padding: 20px; background: var(--el-bg-color-page); }
 
@@ -431,6 +592,65 @@ onMounted(loadSessions)
   height: 100%; color: var(--el-text-color-secondary); gap: 12px;
 }
 .empty-chat p { margin: 0; font-size: 15px; }
+
+.mobile-session-trigger,
+.sidebar-mask {
+  display: none;
+}
+
+@media (hover: none) {
+  .session-actions {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    position: absolute;
+    z-index: 30;
+    inset: 0 auto 0 0;
+    width: min(82vw, 320px);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+  }
+
+  .sidebar.is-mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-mask {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    background: rgba(12, 18, 28, 0.35);
+  }
+
+  .mobile-session-trigger {
+    display: inline-flex;
+    position: absolute;
+    z-index: 10;
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .session-toggle-btn {
+    display: inline-flex;
+  }
+
+  .chat-header {
+    padding-inline: 12px 16px;
+  }
+
+  .messages {
+    padding: 14px;
+  }
+
+  .bubble-wrap {
+    max-width: 88%;
+  }
+}
 </style>
 
 <style scoped>

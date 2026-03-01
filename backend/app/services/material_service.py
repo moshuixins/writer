@@ -123,12 +123,14 @@ class MaterialService:
         keyword: str = None, skip: int = 0, limit: int = 20,
     ) -> list[Material]:
         """查询素材列表"""
-        q = self.db.query(Material).filter(Material.user_id == user_id)
-        if doc_type:
-            q = q.filter(Material.doc_type == doc_type)
-        if keyword:
-            q = q.filter(Material.content_text.contains(keyword))
+        q = self._build_query(user_id=user_id, doc_type=doc_type, keyword=keyword)
         return q.order_by(Material.created_at.desc()).offset(skip).limit(limit).all()
+
+    def count_materials(
+        self, user_id: int, doc_type: str = None, keyword: str = None,
+    ) -> int:
+        """统计素材总数（用于分页）"""
+        return self._build_query(user_id=user_id, doc_type=doc_type, keyword=keyword).count()
 
     def get_material(self, material_id: int) -> Material | None:
         return self.db.query(Material).filter(Material.id == material_id).first()
@@ -142,3 +144,12 @@ class MaterialService:
         self.db.delete(material)
         self.db.commit()
         return True
+    def _build_query(
+        self, user_id: int, doc_type: str = None, keyword: str = None,
+    ):
+        q = self.db.query(Material).filter(Material.user_id == user_id)
+        if doc_type:
+            q = q.filter(Material.doc_type == doc_type)
+        if keyword:
+            q = q.filter(Material.content_text.contains(keyword))
+        return q
