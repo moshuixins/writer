@@ -276,17 +276,58 @@ async def send_message_stream(
     doc_type = session.doc_type or "公文"
 
     async def event_generator():
+        async def emit(event: str, **payload):
+            data = json.dumps({"event": event, **payload}, ensure_ascii=False)
+            yield f"data: {data}\n\n"
+
         full_reply = ""
         try:
             if is_first:
+                async for item in emit("workflow", step="分析写作需求", status="running"):
+                    yield item
                 chunks = svc.guidance_stream(req.message, doc_type)
+                async for item in emit("workflow", step="分析写作需求", status="done"):
+                    yield item
+                async for item in emit("workflow", step="生成写作引导", status="running"):
+                    yield item
             else:
-                chunks = await svc.generate_stream(req.session_id, req.message)
+                async for item in emit("workflow", step="分析请求意图", status="running"):
+                    yield item
+                async for item in emit("workflow", step="搜索素材", status="running"):
+                    yield item
+
+                chunks, meta = await svc.generate_stream_with_meta(req.session_id, req.message)
+
+                async for item in emit(
+                    "workflow",
+                    step="搜索素材",
+                    status="done",
+                    detail=f"命中 {meta.get('reference_count', 0)} 条素材",
+                ):
+                    yield item
+                async for item in emit(
+                    "workflow",
+                    step="加载历史记忆",
+                    status="done",
+                    detail=f"命中 {meta.get('memory_count', 0)} 条记忆",
+                ):
+                    yield item
+                async for item in emit("workflow", step="分析请求意图", status="done"):
+                    yield item
+                async for item in emit("workflow", step="生成回复", status="running"):
+                    yield item
 
             for chunk in chunks:
                 full_reply += chunk
                 data = json.dumps({"chunk": chunk}, ensure_ascii=False)
                 yield f"data: {data}\n\n"
+
+            if is_first:
+                async for item in emit("workflow", step="生成写作引导", status="done"):
+                    yield item
+            else:
+                async for item in emit("workflow", step="生成回复", status="done"):
+                    yield item
         except Exception as e:
             logger.error("Stream error: %s", e)
             err = json.dumps({"error": str(e)}, ensure_ascii=False)
@@ -307,7 +348,6 @@ async def send_message_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(

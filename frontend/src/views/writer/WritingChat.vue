@@ -94,6 +94,19 @@
                 <el-icon v-else :size="18"><User /></el-icon>
               </div>
               <div class="bubble-wrap">
+                <div v-if="msg.role === 'assistant' && msg.workflow_steps?.length" class="workflow-card">
+                  <div class="workflow-title">AI 工作流程</div>
+                  <div
+                    v-for="step in msg.workflow_steps"
+                    :key="step.id"
+                    class="workflow-item"
+                    :class="`is-${step.status}`"
+                  >
+                    <span class="workflow-dot" />
+                    <span class="workflow-text">{{ step.step }}</span>
+                    <span v-if="step.detail" class="workflow-detail">{{ step.detail }}</span>
+                  </div>
+                </div>
                 <div v-if="msg.role === 'assistant'" class="bubble markdown-body" v-html="renderContent(msg)" />
                 <div v-else class="bubble">{{ msg.content }}</div>
                 <div v-if="msg.role === 'assistant' && (msg.content || '').trim()" class="msg-actions">
@@ -203,7 +216,7 @@ import api from '@/api'
 import apiChat from '@/api/modules/chat'
 import apiDocuments from '@/api/modules/documents'
 import { useUserStore } from '@/store/modules/user'
-import type { ChatMessage, ChatSession, WriterDraft } from '@/types/writer'
+import type { ChatMessage, ChatSession, ChatWorkflowStep, WriterDraft } from '@/types/writer'
 import dayjs from '@/utils/dayjs'
 import { DOC_TYPES } from '@/utils/constants'
 import OfficialDocEditor from './components/OfficialDocEditor.vue'
@@ -211,6 +224,13 @@ import OfficialDocEditor from './components/OfficialDocEditor.vue'
 interface OfficialEditorExpose {
   insertTextAtCursor: (text: string) => void
   focusEditor: () => void
+}
+
+interface WorkflowEventPayload {
+  event?: string
+  step?: string
+  status?: 'running' | 'done' | 'error'
+  detail?: string
 }
 
 type SaveState = 'idle' | 'dirty' | 'saving-auto' | 'saving-manual' | 'saved' | 'error'
@@ -309,6 +329,39 @@ function renderContent(msg: ChatMessage): string {
     return ''
   }
   return DOMPurify.sanitize(md.render(msg.content || ''))
+}
+
+function normalizeWorkflowStatus(status?: string): 'running' | 'done' | 'error' {
+  if (status === 'done' || status === 'error') {
+    return status
+  }
+  return 'running'
+}
+
+function upsertWorkflowStep(msg: ChatMessage, payload: WorkflowEventPayload) {
+  if (!payload.step) {
+    return
+  }
+  const status = normalizeWorkflowStatus(payload.status)
+  const steps = msg.workflow_steps ? [...msg.workflow_steps] : []
+  const key = payload.step.trim()
+  const idx = steps.findIndex(item => item.step === key)
+  if (idx === -1) {
+    const step: ChatWorkflowStep = {
+      id: `wf-${Date.now()}-${msgIdCounter++}`,
+      step: key,
+      status,
+      detail: payload.detail,
+    }
+    steps.push(step)
+  } else {
+    steps[idx] = {
+      ...steps[idx],
+      status,
+      detail: payload.detail || steps[idx].detail,
+    }
+  }
+  msg.workflow_steps = steps
 }
 
 function copyContent(text: string) {
@@ -532,7 +585,7 @@ async function sendMessage() {
   const assistantTempId = `stream-${msgIdCounter++}`
 
   messages.value.push({ id: userTempId, role: 'user', content: text })
-  const assistantMsg: ChatMessage = { id: assistantTempId, role: 'assistant', content: '' }
+  const assistantMsg: ChatMessage = { id: assistantTempId, role: 'assistant', content: '', workflow_steps: [] }
   messages.value.push(assistantMsg)
   scrollToBottom()
 
@@ -574,6 +627,15 @@ async function sendMessage() {
       if (parsed.error) {
         throw new Error(parsed.error)
       }
+      if (parsed.event === 'workflow') {
+        upsertWorkflowStep(assistantMsg, parsed as WorkflowEventPayload)
+        const idx = messages.value.findIndex(m => m.id === assistantTempId)
+        if (idx !== -1) {
+          messages.value[idx] = { ...assistantMsg }
+        }
+        scrollToBottom()
+        return
+      }
       if (parsed.chunk) {
         assistantMsg.content += parsed.chunk
         const idx = messages.value.findIndex(m => m.id === assistantTempId)
@@ -600,7 +662,7 @@ async function sendMessage() {
     if (buffer.trim()) {
       processLine(buffer.trim())
     }
-    if (assistantMsg.content.trim()) {
+    if (assistantMsg.content.trim() || assistantMsg.workflow_steps?.length) {
       const idx = messages.value.findIndex(m => m.id === assistantTempId)
       if (idx !== -1) {
         messages.value[idx] = {
@@ -612,7 +674,7 @@ async function sendMessage() {
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       const idx = messages.value.findIndex(m => m.id === assistantTempId)
-      if (idx !== -1 && !assistantMsg.content.trim()) {
+      if (idx !== -1 && !assistantMsg.content.trim() && !(assistantMsg.workflow_steps?.length)) {
         messages.value.splice(idx, 1)
       }
       ElMessage.info('已停止生成')
@@ -993,6 +1055,62 @@ onBeforeUnmount(() => {
 .bubble-wrap {
   max-width: 78%;
   min-width: 80px;
+}
+
+.workflow-card {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+
+.workflow-title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+
+.workflow-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  line-height: 1.6;
+}
+
+.workflow-item + .workflow-item {
+  margin-top: 2px;
+}
+
+.workflow-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--el-color-info);
+  flex: 0 0 auto;
+}
+
+.workflow-item.is-running .workflow-dot {
+  background: var(--el-color-warning);
+}
+
+.workflow-item.is-done .workflow-dot {
+  background: var(--el-color-success);
+}
+
+.workflow-item.is-error .workflow-dot {
+  background: var(--el-color-danger);
+}
+
+.workflow-text {
+  flex: 0 1 auto;
+}
+
+.workflow-detail {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .bubble {

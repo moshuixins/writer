@@ -23,6 +23,14 @@ export interface ChatMessage {
   role: string
   content: string
   created_at?: string
+  workflow_steps?: ChatWorkflowStep[]
+}
+
+export interface ChatWorkflowStep {
+  id: string
+  step: string
+  status: 'running' | 'done' | 'error'
+  detail?: string
 }
 
 export interface Material {
