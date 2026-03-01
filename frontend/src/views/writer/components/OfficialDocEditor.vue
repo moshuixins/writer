@@ -15,45 +15,6 @@
       </div>
     </div>
 
-    <div class="meta-grid">
-      <div class="meta-item title">
-        <label>标题</label>
-        <el-input
-          v-model="internalDraft.title"
-          placeholder="例如：关于开展交通秩序整治行动的通知"
-          maxlength="100"
-          @input="onMetaChange"
-        />
-      </div>
-      <div class="meta-item recipients">
-        <label>主送机关</label>
-        <el-input
-          v-model="internalDraft.recipients"
-          placeholder="例如：各大队、机关各科室"
-          maxlength="200"
-          @input="onMetaChange"
-        />
-      </div>
-      <div class="meta-item signing-org">
-        <label>落款单位</label>
-        <el-input
-          v-model="internalDraft.signing_org"
-          placeholder="例如：XX市公安局交通管理支队"
-          maxlength="100"
-          @input="onMetaChange"
-        />
-      </div>
-      <div class="meta-item date">
-        <label>日期</label>
-        <el-input
-          v-model="internalDraft.date"
-          placeholder="例如：2026年3月1日"
-          maxlength="50"
-          @input="onMetaChange"
-        />
-      </div>
-    </div>
-
     <div class="toolbar">
       <el-button-group>
         <el-button
@@ -217,13 +178,6 @@ function emitChange() {
   emit('update:modelValue', cloneDraft(next))
 }
 
-function onMetaChange() {
-  if (syncingFromParent.value) {
-    return
-  }
-  emitChange()
-}
-
 function toggleBold() {
   editor.value?.chain().focus().toggleBold().run()
 }
@@ -317,7 +271,7 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
   padding: 12px;
-  background: linear-gradient(180deg, #fdfdfd 0%, #f8fafc 100%);
+  background: var(--el-bg-color);
 }
 
 .editor-head {
@@ -348,28 +302,6 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
-.meta-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 12px;
-}
-
-.meta-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.meta-item.title,
-.meta-item.recipients {
-  grid-column: span 2;
-}
-
-.meta-item label {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
 .toolbar {
   display: flex;
   align-items: center;
@@ -377,17 +309,16 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 8px;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  background: #fff;
+  border-radius: 8px;
+  background: var(--el-bg-color);
 }
 
 .editor-surface {
   flex: 1;
   min-height: 0;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  background: var(--el-bg-color);
 }
 
 .tiptap-body {
@@ -424,17 +355,6 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-family: 'KaiTi', '楷体', serif;
   font-weight: 600;
-}
-
-@media (max-width: 1200px) {
-  .meta-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .meta-item.title,
-  .meta-item.recipients {
-    grid-column: span 1;
-  }
 }
 
 @media (max-width: 900px) {

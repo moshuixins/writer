@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -314,7 +315,8 @@ async def delete_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.models.chat import ChatMessage, ChatSession
+    from app.models.chat import ChatMessage, ChatSession, SessionDraft
+    from app.models.document import GeneratedDocument
 
     session = db.query(ChatSession).filter(
         ChatSession.id == session_id,
@@ -330,9 +332,42 @@ async def delete_session(
         except Exception as e:
             logger.warning("OV commit failed: %s", e)
 
-    db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete()
-    db.delete(session)
-    db.commit()
+    docs = db.query(GeneratedDocument).filter(
+        GeneratedDocument.session_id == session_id,
+        GeneratedDocument.user_id == current_user.id,
+    ).all()
+    doc_paths = [doc.docx_file_path for doc in docs if doc.docx_file_path]
+
+    try:
+        db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete(synchronize_session=False)
+        db.query(SessionDraft).filter(
+            SessionDraft.session_id == session_id,
+            SessionDraft.user_id == current_user.id,
+        ).delete(synchronize_session=False)
+        db.query(GeneratedDocument).filter(
+            GeneratedDocument.session_id == session_id,
+            GeneratedDocument.user_id == current_user.id,
+        ).delete(synchronize_session=False)
+        db.delete(session)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.exception(
+            "Delete session failed, session_id=%s user_id=%s err=%s",
+            session_id,
+            current_user.id,
+            e,
+        )
+        raise HTTPException(500, "删除会话失败，请稍后重试")
+
+    for doc_path in doc_paths:
+        try:
+            path_obj = Path(doc_path)
+            if path_obj.exists():
+                path_obj.unlink()
+        except Exception:
+            logger.warning("Failed to cleanup docx file: %s", doc_path)
+
     return {"message": "会话已删除"}
 
 

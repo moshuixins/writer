@@ -96,7 +96,7 @@
               <div class="bubble-wrap">
                 <div v-if="msg.role === 'assistant'" class="bubble markdown-body" v-html="renderContent(msg)" />
                 <div v-else class="bubble">{{ msg.content }}</div>
-                <div v-if="msg.role === 'assistant' && !msg.id?.toString().startsWith('stream-')" class="msg-actions">
+                <div v-if="msg.role === 'assistant' && (msg.content || '').trim()" class="msg-actions">
                   <el-button text size="small" @click="copyContent(msg.content)">
                     <el-icon><CopyDocument /></el-icon>
                     复制
@@ -600,6 +600,15 @@ async function sendMessage() {
     if (buffer.trim()) {
       processLine(buffer.trim())
     }
+    if (assistantMsg.content.trim()) {
+      const idx = messages.value.findIndex(m => m.id === assistantTempId)
+      if (idx !== -1) {
+        messages.value[idx] = {
+          ...assistantMsg,
+          id: `assistant-${Date.now()}-${msgIdCounter++}`,
+        }
+      }
+    }
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       const idx = messages.value.findIndex(m => m.id === assistantTempId)
@@ -622,63 +631,12 @@ function stopGenerating() {
   abortController.value?.abort()
 }
 
-function stringifySection(item: any) {
-  const heading = typeof item?.heading === 'string' ? item.heading.trim() : ''
-  const content = typeof item?.content === 'string' ? item.content.trim() : ''
-  if (heading && content) {
-    return `${heading}\n${content}`
-  }
-  return heading || content
-}
-
-function toInsertableText(rawContent: string) {
-  const text = (rawContent || '').trim()
-  if (!text) {
-    return ''
-  }
-
-  try {
-    const parsed = JSON.parse(text)
-    if (!parsed || typeof parsed !== 'object') {
-      return text
-    }
-
-    const lines: string[] = []
-    const data = parsed as Record<string, any>
-
-    if (typeof data.title === 'string' && data.title.trim()) {
-      lines.push(data.title.trim())
-    }
-    if (typeof data.recipients === 'string' && data.recipients.trim()) {
-      lines.push(data.recipients.trim())
-    }
-    if (Array.isArray(data.body_sections)) {
-      for (const section of data.body_sections) {
-        const sectionText = stringifySection(section)
-        if (sectionText) {
-          lines.push(sectionText)
-        }
-      }
-    }
-    if (typeof data.signing_org === 'string' && data.signing_org.trim()) {
-      lines.push(data.signing_org.trim())
-    }
-    if (typeof data.date === 'string' && data.date.trim()) {
-      lines.push(data.date.trim())
-    }
-
-    return lines.filter(Boolean).join('\n\n') || text
-  } catch {
-    return text
-  }
-}
-
 function insertAssistantMessage(content: string) {
   if (!currentSession.value) {
     return
   }
 
-  const text = toInsertableText(content)
+  const text = (content || '').trim()
   if (!text.trim()) {
     ElMessage.warning('当前消息内容为空，无法插入')
     return
@@ -747,25 +705,23 @@ async function deleteSession(id: number) {
   }
 
   try {
+    const deletingCurrent = Number(currentSession.value?.id) === Number(id)
     await apiChat.deleteSession(id)
-    sessions.value = sessions.value.filter(s => s.id !== id)
+    sessions.value = sessions.value.filter(s => Number(s.id) !== Number(id))
 
-    if (currentSession.value?.id === id) {
+    if (deletingCurrent) {
       currentSession.value = null
       messages.value = []
       draft.value = createEmptyDraft()
       saveState.value = 'idle'
       draftDirty.value = false
       lastSavedAt.value = ''
-
-      if (sessions.value.length > 0) {
-        await selectSession(sessions.value[0])
-      }
     }
 
+    await loadSessions()
     ElMessage.success('会话已删除')
   } catch {
-    // error toast handled by interceptor
+    ElMessage.error('删除失败，请稍后重试')
   }
 }
 
@@ -839,23 +795,20 @@ onBeforeUnmount(() => {
   display: flex;
   height: calc(100vh - var(--g-header-height));
   position: relative;
-  background:
-    radial-gradient(1200px 400px at 70% -120px, rgba(99, 102, 241, 0.08), transparent 70%),
-    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  background: var(--el-bg-color-page);
 }
 
 .sidebar {
   width: 280px;
   padding: 14px;
   overflow-y: auto;
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--el-bg-color);
   border-right: 1px solid var(--el-border-color-lighter);
-  backdrop-filter: blur(8px);
 }
 
 .new-btn {
   width: 100%;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .session-search {
@@ -874,23 +827,23 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  border: 0;
+  border: 1px solid var(--el-border-color-lighter);
   text-align: left;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.66);
+  border-radius: 8px;
+  background: var(--el-bg-color);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .session-item:hover {
-  background: #eef4ff;
-  transform: translateY(-1px);
+  background: var(--el-fill-color-light);
+  border-color: var(--el-color-primary-light-7);
 }
 
 .session-item.active {
-  background: #dbeafe;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.14);
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-5);
 }
 
 .session-info {
@@ -948,29 +901,6 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(420px, 1fr);
-  position: relative;
-}
-
-.workspace::before {
-  content: '';
-  position: absolute;
-  left: calc(50% - 0.5px);
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, rgba(148, 163, 184, 0.9), transparent);
-  pointer-events: none;
-}
-
-.workspace::after {
-  content: '';
-  position: absolute;
-  left: calc(50% + 1px);
-  top: 0;
-  bottom: 0;
-  width: 14px;
-  background: linear-gradient(90deg, rgba(148, 163, 184, 0.16), rgba(148, 163, 184, 0));
-  pointer-events: none;
 }
 
 .mobile-tab-toggle {
@@ -986,11 +916,12 @@ onBeforeUnmount(() => {
 }
 
 .chat-panel {
-  background: rgba(255, 255, 255, 0.62);
+  background: var(--el-bg-color);
 }
 
 .editor-panel {
-  background: rgba(248, 250, 252, 0.88);
+  background: var(--el-bg-color);
+  border-left: 1px solid var(--el-border-color-lighter);
 }
 
 .chat-header,
@@ -1000,7 +931,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 12px 18px;
   border-bottom: 1px solid var(--el-border-color-lighter);
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--el-bg-color);
 }
 
 .editor-header {
@@ -1051,12 +982,12 @@ onBeforeUnmount(() => {
 
 .avatar.assistant {
   color: #fff;
-  background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
+  background: var(--el-color-primary);
 }
 
 .avatar.user {
   color: #fff;
-  background: linear-gradient(135deg, #0284c7, #22c55e);
+  background: var(--el-color-success);
 }
 
 .bubble-wrap {
@@ -1066,7 +997,7 @@ onBeforeUnmount(() => {
 
 .bubble {
   padding: 12px 16px;
-  border-radius: 12px;
+  border-radius: 8px;
   line-height: 1.7;
   font-size: 14px;
   word-break: break-word;
@@ -1108,7 +1039,7 @@ onBeforeUnmount(() => {
 .input-area {
   padding: 14px 18px;
   border-top: 1px solid var(--el-border-color-lighter);
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--el-bg-color);
 }
 
 .actions {
@@ -1208,7 +1139,7 @@ onBeforeUnmount(() => {
     width: min(84vw, 320px);
     transform: translateX(-100%);
     transition: transform 0.2s ease;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
   }
 
   .sidebar.is-mobile-open {
@@ -1234,11 +1165,6 @@ onBeforeUnmount(() => {
   .workspace {
     display: block;
     height: 100%;
-  }
-
-  .workspace::before,
-  .workspace::after {
-    display: none;
   }
 
   .mobile-tab-toggle {
