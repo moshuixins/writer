@@ -1,11 +1,11 @@
 # 公文写作助手
 
-交管支队智能公文写作平台，基于 AI 多轮对话生成标准公文，支持素材语义检索、风格学习、隐式记忆、流式输出。
+智能公文写作平台，基于 AI 多轮对话生成标准公文，支持素材语义检索、风格学习、隐式记忆、流式输出。
 
 ## 技术栈
 
 - 后端：FastAPI + SQLAlchemy + LangChain + SiliconFlow (DeepSeek-V3.2)
-- 前端：Vue 3 + TypeScript + Element Plus + Pinia
+- 前端：Vue 3.5 + TypeScript + Vite 7 + Element Plus + UnoCSS + Pinia 3 (基于 Fantastic-admin)
 - 向量检索与记忆：OpenViking（字节跳动开源 AI Agent 上下文数据库）
 - 文档生成：python-docx（GB/T 9704-2012 标准格式）
 - 部署：Docker Compose
@@ -25,34 +25,24 @@ writer/
 │       ├── database.py           # SQLAlchemy 连接
 │       ├── auth.py               # JWT 认证
 │       ├── api/                  # API 路由
-│       │   ├── auth.py           # 注册 / 登录
-│       │   ├── materials.py      # 素材管理（含批量操作）
-│       │   ├── chat.py           # 写作对话（含 SSE 流式）
-│       │   ├── documents.py      # 文档导出 / 历史
-│       │   └── preferences.py    # 用户偏好
 │       ├── services/             # 业务逻辑
-│       │   ├── writing_service.py    # 写作引导与内容生成
-│       │   ├── material_service.py   # 素材解析、分类、摘要
-│       │   ├── style_analyzer.py     # 风格学习与特征提取
-│       │   ├── docx_generator.py     # 公文 docx 生成
-│       │   ├── context_bridge.py     # OpenViking 适配层
-│       │   ├── memory_service.py     # 用户显式偏好管理
-│       │   └── llm_service.py        # LLM 调用封装（含流式）
 │       ├── models/               # 数据库模型（含复合索引）
 │       └── prompts/              # LLM Prompt 模板
-├── frontend/
-│   ├── Dockerfile
+├── frontend/                     # 基于 Fantastic-admin 的前端
+│   ├── Dockerfile                # Node 22 + pnpm 多阶段构建
 │   ├── nginx.conf                # Nginx 反向代理配置
 │   └── src/
 │       ├── views/
-│       │   ├── Login.vue             # 登录页
-│       │   ├── WritingChat.vue       # 写作对话页（SSE 打字机效果）
-│       │   ├── MaterialManager.vue   # 素材管理页
-│       │   ├── ExportHistory.vue     # 导出历史页
-│       │   └── Settings.vue          # 偏好设置页
-│       ├── types/index.ts        # 共享类型定义
-│       ├── api/index.ts          # Axios 客户端
-│       └── stores/auth.ts        # Pinia 认证状态
+│       │   ├── login.vue             # 登录页（含注册）
+│       │   └── writer/
+│       │       ├── WritingChat.vue       # 写作对话页（SSE 打字机效果）
+│       │       ├── MaterialManager.vue   # 素材管理页
+│       │       ├── ExportHistory.vue     # 导出历史页
+│       │       └── Settings.vue          # 偏好设置页
+│       ├── api/modules/          # API 模块（chat/materials/documents/preferences）
+│       ├── types/writer.ts       # 业务类型定义
+│       ├── utils/constants.ts    # 公文类型常量
+│       └── store/modules/user.ts # 认证状态管理
 └── data/
     ├── openviking/ov.conf        # OpenViking 配置
     ├── uploads/                  # 上传文件存储
@@ -63,7 +53,7 @@ writer/
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│           Frontend (Vue 3 + Element Plus)            │
+│           Frontend (Vue 3.5 + Element Plus + UnoCSS)   │
 │  登录  │  写作对话  │  素材管理  │  导出历史  │  设置  │
 └───────────────────┬─────────────────────────────────┘
                     │ REST API + SSE
@@ -167,13 +157,13 @@ cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 
-# 前端
+# 前端（需要 Node >= 22.12，pnpm >= 10）
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
-前端开发服务器默认 `http://localhost:3000`，已配置代理转发 `/api` 到后端。
+前端开发服务器默认 `http://localhost:9000`，已配置代理转发 `/api` 到后端。
 
 ### 环境变量
 

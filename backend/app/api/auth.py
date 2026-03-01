@@ -3,7 +3,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
-from app.auth import hash_password, verify_password, create_access_token
+from app.auth import get_current_user, hash_password, verify_password, create_access_token
 
 router = APIRouter()
 
@@ -33,6 +33,23 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    display_name: str = ""
+    department: str = ""
+
+
+class ChangePasswordRequest(BaseModel):
+    password: str
+    newPassword: str
+
+    @field_validator("newPassword")
+    @classmethod
+    def new_password_valid(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError("新密码长度不能少于6位")
+        return v
 
 
 @router.post("/register")
@@ -81,3 +98,52 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             "department": user.department,
         },
     }
+
+
+@router.get("/profile")
+def get_profile(current_user: User = Depends(get_current_user)):
+    """获取当前用户信息"""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "display_name": current_user.display_name,
+        "department": current_user.department,
+    }
+
+
+@router.put("/profile")
+def update_profile(
+    req: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """更新用户基本信息"""
+    if req.display_name:
+        current_user.display_name = req.display_name
+    if req.department:
+        current_user.department = req.department
+    db.commit()
+    db.refresh(current_user)
+    return {
+        "message": "资料已更新",
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "display_name": current_user.display_name,
+            "department": current_user.department,
+        },
+    }
+
+
+@router.post("/change-password")
+def change_password(
+    req: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """修改密码"""
+    if not verify_password(req.password, current_user.password_hash):
+        raise HTTPException(400, "当前密码错误")
+    current_user.password_hash = hash_password(req.newPassword)
+    db.commit()
+    return {"message": "密码已修改"}

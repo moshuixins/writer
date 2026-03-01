@@ -21,9 +21,13 @@ class ContextBridge:
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
+            headers = {}
+            if settings.openviking_root_api_key:
+                headers["Authorization"] = f"Bearer {settings.openviking_root_api_key}"
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
                 timeout=120.0,
+                headers=headers,
             )
         return self._client
 

@@ -21,6 +21,8 @@ data/openviking/workspace/
 # IDE
 .vscode/
 .idea/
+.claude/
+.qoder/
 *.swp
 *.swo
 

@@ -1,12 +1,13 @@
-FROM node:20-alpine AS build
-
+FROM node:22-alpine AS builder
+RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm install
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile
 COPY . .
-RUN npm run build
+RUN pnpm run --config.verify-deps-before-run=false build
 
 FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

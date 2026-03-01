@@ -1,48 +1,95 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+// import qs from 'qs'
+import { toast } from 'vue-sonner'
+
+// 请求重试配置
+const MAX_RETRY_COUNT = 3 // 最大重试次数
+const RETRY_DELAY = 1000 // 重试延迟时间（毫秒）
+
+// 扩展 AxiosRequestConfig 类型
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    retry?: boolean
+    retryCount?: number
+  }
+}
 
 const api = axios.create({
-  baseURL: '/api',
-  timeout: 60000,
+  baseURL: (import.meta.env.DEV && import.meta.env.VITE_OPEN_PROXY) ? '/proxy/' : import.meta.env.VITE_APP_API_BASEURL,
+  timeout: 1000 * 60,
+  responseType: 'json',
 })
 
-// 请求拦截器：自动带 token
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// 响应拦截器：统一错误处理
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response) {
-      const { status, data } = error.response
-      const msg = data?.error || data?.detail || '请求失败'
-      if (status === 401) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('user')
-        window.location.href = '/login'
-        return Promise.reject(error)
-      } else if (status === 400) {
-        ElMessage.warning(msg)
-      } else if (status === 404) {
-        ElMessage.warning('资源不存在')
-      } else if (status === 503) {
-        ElMessage.error('服务暂时不可用，请稍后重试')
-      } else if (status >= 500) {
-        ElMessage.error(msg)
+api.interceptors.request.use(
+  (request) => {
+    // 全局拦截请求发送前提交的参数
+    const userStore = useUserStore()
+    // 设置请求头
+    if (request.headers) {
+      if (userStore.isLogin) {
+        request.headers.Authorization = `Bearer ${userStore.token}`
       }
-    } else if (error.code === 'ECONNABORTED') {
-      ElMessage.error('请求超时，请稍后重试')
-    } else {
-      ElMessage.error('网络连接失败')
     }
-    return Promise.reject(error)
+    // 是否将 POST 请求参数进行字符串化处理
+    if (request.method === 'post') {
+      // request.data = qs.stringify(request.data, {
+      //   arrayFormat: 'brackets',
+      // })
+    }
+    return request
+  },
+)
+
+// 处理错误信息的函数
+function handleError(error: any) {
+  const url = error.config?.url || ''
+  const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register')
+
+  if (error.status === 401 && !isAuthEndpoint) {
+    // token 过期，跳转登录页（登录/注册接口的 401 不触发登出）
+    useUserStore().requestLogout()
   }
+  else {
+    // 优先使用后端返回的 detail 信息
+    let message = error.response?.data?.detail || error.message
+    if (message === 'Network Error') {
+      message = '后端网络故障'
+    }
+    else if (message.includes?.('timeout')) {
+      message = '接口请求超时'
+    }
+    toast.error('请求失败', {
+      description: message,
+    })
+  }
+  return Promise.reject(error)
+}
+
+api.interceptors.response.use(
+  (response) => {
+    // writer 后端使用标准 HTTP 状态码，直接透传响应
+    return Promise.resolve(response)
+  },
+  async (error) => {
+    // 获取请求配置
+    const config = error.config
+    // 如果配置不存在或未启用重试，则直接处理错误
+    if (!config || !config.retry) {
+      return handleError(error)
+    }
+    // 设置重试次数
+    config.retryCount = config.retryCount || 0
+    // 判断是否超过重试次数
+    if (config.retryCount >= MAX_RETRY_COUNT) {
+      return handleError(error)
+    }
+    // 重试次数自增
+    config.retryCount += 1
+    // 延迟重试
+    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
+    // 重新发起请求
+    return api(config)
+  },
 )
 
 export default api

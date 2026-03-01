@@ -19,13 +19,14 @@ class Settings(BaseSettings):
     # OpenViking
     openviking_server_url: str = "http://127.0.0.1:1933"
     openviking_config_file: str = str(PROJECT_ROOT / "data" / "openviking" / "ov.conf")
+    openviking_root_api_key: str = "ov-writer-secret-key-change-me"
 
     # File paths
     upload_dir: str = str(PROJECT_ROOT / "data" / "uploads")
     export_dir: str = str(PROJECT_ROOT / "data" / "exports")
 
     # CORS
-    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:9000,http://127.0.0.1:9000"
 
     # Rate limiting
     rate_limit_per_minute: int = 60
