@@ -9,15 +9,16 @@
       <el-upload
         :action="uploadUrl"
         :headers="uploadHeaders"
+        :data="uploadData"
         :on-success="onUploadSuccess"
         :on-error="onUploadError"
         :on-progress="onUploadProgress"
         :before-upload="beforeUpload"
         :show-file-list="false"
-        accept=".docx,.pdf,.txt"
+        accept=".doc,.docx,.pdf,.txt"
       >
-        <el-button type="primary" :loading="uploading">
-          {{ uploading ? '上传中...' : '上传素材' }}
+        <el-button type="primary" :loading="uploadDialogVisible">
+          {{ parsing ? '解析中...' : (uploading ? '上传中...' : '上传素材') }}
         </el-button>
       </el-upload>
     </div>
@@ -90,6 +91,20 @@
         @size-change="onPageSizeChange"
       />
     </div>
+
+    <el-dialog
+      v-model="uploadDialogVisible"
+      title="上传与解析进度"
+      width="420px"
+      :show-close="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      align-center
+    >
+      <p class="upload-dialog-text">{{ parseStageText }}</p>
+      <el-progress :percentage="combinedPercent" :stroke-width="8" />
+      <p class="upload-dialog-subtext">{{ combinedDetailText }}</p>
+    </el-dialog>
   </div>
 </template>
 
@@ -108,6 +123,13 @@ const userStore = useUserStore()
 const materials = ref<Material[]>([])
 const loading = ref(false)
 const uploading = ref(false)
+const parsing = ref(false)
+const uploadDialogVisible = ref(false)
+const uploadPercent = ref(0)
+const parsePercent = ref(0)
+const parseStageText = ref('等待上传')
+const currentUploadTaskId = ref('')
+const uploadFlowEnded = ref(false)
 
 const selectedIds = ref<number[]>([])
 const batchDocType = ref('')
@@ -117,9 +139,18 @@ const pageSize = ref(20)
 const total = ref(0)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let uploadTaskPollTimer: ReturnType<typeof setInterval> | null = null
+let pollingTask = false
 
 const uploadUrl = apiMaterials.uploadUrl
 const uploadHeaders = computed(() => (userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}))
+const uploadData = computed(() => ({
+  task_id: currentUploadTaskId.value,
+}))
+const combinedPercent = computed(() =>
+  Math.max(0, Math.min(100, Math.round(uploadPercent.value * 0.5 + parsePercent.value * 0.5))),
+)
+const combinedDetailText = computed(() => `上传 ${uploadPercent.value}% · 解析 ${parsePercent.value}%`)
 
 const filters = reactive({
   docType: '',
@@ -174,32 +205,117 @@ function onPageSizeChange(size: number) {
   void loadMaterials()
 }
 
+function generateTaskId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return `task-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function stopUploadTaskPolling() {
+  if (uploadTaskPollTimer) {
+    clearInterval(uploadTaskPollTimer)
+    uploadTaskPollTimer = null
+  }
+}
+
+function startUploadTaskPolling() {
+  stopUploadTaskPolling()
+  uploadTaskPollTimer = setInterval(() => {
+    void pollUploadTask()
+  }, 500)
+}
+
+async function pollUploadTask() {
+  if (!currentUploadTaskId.value || uploadFlowEnded.value || pollingTask) {
+    return
+  }
+
+  pollingTask = true
+  try {
+    const { data } = await apiMaterials.getUploadTask(currentUploadTaskId.value)
+    parsePercent.value = Math.max(parsePercent.value, Math.max(0, Math.min(100, Number(data.parse_progress || 0))))
+    parseStageText.value = data.stage || parseStageText.value
+    parsing.value = data.status === 'parsing' || parsePercent.value < 100
+  } catch {
+    // 任务尚未创建或网络瞬时失败时忽略，下次轮询继续
+  } finally {
+    pollingTask = false
+  }
+}
+
+function finishUploadFlow() {
+  stopUploadTaskPolling()
+  uploadDialogVisible.value = false
+  uploading.value = false
+  parsing.value = false
+  currentUploadTaskId.value = ''
+}
+
+function failUploadFlow(message: string) {
+  if (uploadFlowEnded.value) {
+    return
+  }
+  uploadFlowEnded.value = true
+  finishUploadFlow()
+  ElMessage.error(message)
+}
+
 function beforeUpload(file: File) {
   const ext = file.name.split('.').pop()?.toLowerCase()
-  if (!['docx', 'pdf', 'txt'].includes(ext || '')) {
-    ElMessage.error('仅支持 .docx/.pdf/.txt 格式')
+  if (!['doc', 'docx', 'pdf', 'txt'].includes(ext || '')) {
+    ElMessage.error('仅支持 .doc/.docx/.pdf/.txt 格式')
     return false
   }
   if (file.size > MAX_FILE_SIZE) {
     ElMessage.error('文件大小不能超过 50MB')
     return false
   }
+  uploadFlowEnded.value = false
+  currentUploadTaskId.value = generateTaskId()
+  uploadPercent.value = 0
+  parsePercent.value = 0
+  parseStageText.value = '正在上传文件...'
+  uploadDialogVisible.value = true
+  uploading.value = true
+  parsing.value = false
+  startUploadTaskPolling()
   return true
 }
 
-function onUploadProgress() {
+function onUploadProgress(event: { percent?: number }) {
+  const percent = Number(event?.percent || 0)
+  if (!Number.isFinite(percent)) {
+    return
+  }
+
+  uploadPercent.value = Math.max(0, Math.min(100, Math.round(percent)))
+  if (uploadPercent.value >= 100) {
+    uploading.value = false
+    parsing.value = true
+    parseStageText.value = '文件上传完成，正在解析素材...'
+    return
+  }
+
   uploading.value = true
 }
 
 function onUploadSuccess() {
-  uploading.value = false
-  ElMessage.success('上传成功，正在解析素材')
+  if (uploadFlowEnded.value) {
+    return
+  }
+  uploadFlowEnded.value = true
+  uploadPercent.value = 100
+  parsePercent.value = 100
+  parseStageText.value = '解析完成'
+  finishUploadFlow()
+  ElMessage.success('上传成功')
   resetAndLoad()
 }
 
 function onUploadError() {
-  uploading.value = false
-  ElMessage.error('上传失败，请稍后重试')
+  const wasParsing = parsePercent.value > 0 || uploadPercent.value >= 100 || parsing.value
+  failUploadFlow(wasParsing ? '素材解析失败，请稍后重试' : '上传失败，请稍后重试')
 }
 
 function showDetail(row: Material) {
@@ -288,6 +404,7 @@ onUnmounted(() => {
     clearTimeout(searchTimer)
     searchTimer = null
   }
+  stopUploadTaskPolling()
 })
 </script>
 
@@ -376,6 +493,18 @@ onUnmounted(() => {
   justify-content: flex-end;
 }
 
+.upload-dialog-text {
+  margin: 4px 0 12px;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
+.upload-dialog-subtext {
+  margin: 10px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
 @media (max-width: 768px) {
   .material-manager {
     padding: 16px;
@@ -400,3 +529,4 @@ onUnmounted(() => {
   }
 }
 </style>
+

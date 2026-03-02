@@ -3,4 +3,5 @@ dist
 .git
 .cursor
 .env*
+!.env.production
 *.log

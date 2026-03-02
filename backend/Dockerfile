@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app/backend
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libffi-dev && \
+    gcc libffi-dev antiword && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

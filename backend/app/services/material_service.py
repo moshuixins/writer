@@ -1,5 +1,7 @@
 import os
 import re
+import shutil
+import subprocess
 import uuid
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -27,7 +29,7 @@ class MaterialService:
         if len(file_bytes) > MAX_FILE_SIZE:
             raise FileValidationError(f"文件大小超过限制（最大{MAX_FILE_SIZE // 1024 // 1024}MB）")
         ext = Path(filename).suffix.lower()
-        if ext not in {".docx", ".pdf", ".txt"}:
+        if ext not in {".doc", ".docx", ".pdf", ".txt"}:
             raise FileValidationError(f"不支持的文件格式: {ext}")
         unique_name = f"{uuid.uuid4().hex}{ext}"
         upload_dir = Path(settings.upload_dir)
@@ -41,7 +43,9 @@ class MaterialService:
         """从文件中提取纯文本"""
         ext = Path(filename).suffix.lower()
         try:
-            if ext == ".docx":
+            if ext == ".doc":
+                return self._extract_doc(file_path)
+            elif ext == ".docx":
                 return self._extract_docx(file_path)
             elif ext == ".pdf":
                 return self._extract_pdf(file_path)
@@ -59,6 +63,43 @@ class MaterialService:
         doc = DocxDocument(file_path)
         paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         return "\n".join(paragraphs)
+
+    def _extract_doc(self, file_path: str) -> str:
+        """提取 legacy .doc 文本：优先调用系统 antiword/catdoc。"""
+        for tool in ("antiword", "catdoc", "wvText"):
+            tool_path = shutil.which(tool)
+            if not tool_path:
+                continue
+
+            try:
+                result = subprocess.run(
+                    [tool_path, file_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=45,
+                    check=False,
+                )
+            except Exception as e:
+                logger.warning("%s failed for %s: %s", tool, file_path, e)
+                continue
+
+            raw = result.stdout or b""
+            text = ""
+            for encoding in ("utf-8", "gbk", "gb2312", "utf-16", "latin-1"):
+                try:
+                    text = raw.decode(encoding)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+
+            text = text.replace("\x00", "").strip() if text else ""
+            if text:
+                return text
+
+            stderr_preview = (result.stderr or b"").decode("utf-8", errors="ignore")[:200]
+            logger.warning("%s extracted empty text for %s: %s", tool, file_path, stderr_preview)
+
+        raise FileValidationError("DOC 文件解析失败：服务器缺少 antiword/catdoc，或文件内容不可读取")
 
     def _extract_pdf(self, file_path: str) -> str:
         try:
@@ -124,7 +165,8 @@ class MaterialService:
         if not text:
             return 0
         normalized = text.replace("\ufeff", "")
-        normalized = re.sub(r"[\s\u00a0\u3000]+", "", normalized)
+        # 去除空白 + 常见不可见控制字符，避免“看不见字符”造成字数偏差。
+        normalized = re.sub(r"[\s\u00a0\u3000\u200b-\u200f\u2060\u2066-\u2069\ufeff]+", "", normalized)
         return len(normalized)
 
     def normalize_material_char_count(self, material: Material) -> int:

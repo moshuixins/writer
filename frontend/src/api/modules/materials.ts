@@ -7,6 +7,16 @@ export default {
 
   uploadUrl: '/api/materials/upload',
 
+  getUploadTask: (taskId: string) =>
+    api.get<{
+      task_id: string
+      status: 'pending' | 'parsing' | 'completed' | 'failed'
+      stage: string
+      message?: string
+      parse_progress: number
+      updated_at: number
+    }>(`/api/materials/upload-tasks/${taskId}`),
+
   delete: (id: number) => api.delete(`/api/materials/${id}`),
 
   batchDelete: (ids: number[]) => api.post('/api/materials/batch-delete', { ids }),

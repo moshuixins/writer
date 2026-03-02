@@ -83,6 +83,30 @@ def validate_keywords(raw: str, max_keywords: int = 10) -> list[str]:
     return cleaned
 
 
+def validate_title(raw: str, fallback: str = "", max_len: int = 100) -> str:
+    """校验标题提取结果，失败时回退到 fallback。"""
+    text = (raw or "").strip()
+    if not text:
+        return (fallback or "").strip()
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return (fallback or "").strip()
+
+    title = lines[0]
+    title = re.sub(r"^(标题|题目)\s*[:：]\s*", "", title)
+    title = title.strip().strip("\"'“”‘’[]【】")
+    title = re.sub(r"\s+", " ", title)
+
+    if not title or title in {"无", "无标题", "未提供标题", "N/A", "NA"}:
+        return (fallback or "").strip()
+
+    if len(title) > max_len:
+        title = title[:max_len].rstrip("，。；：,.!?！？")
+
+    return title or (fallback or "").strip()
+
+
 def validate_writing_json(raw: str) -> dict:
     """校验写作生成的 JSON 结构，返回合法 dict 或兜底结构"""
     data = parse_json_response(raw)
