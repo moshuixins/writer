@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@tinymce/tinymce-vue':
+        specifier: ^6.3.0
+        version: 6.3.0(tinymce@8.3.2)(vue@3.5.26(typescript@5.9.3))
       '@tiptap/extension-bold':
         specifier: ^2.26.3
         version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
@@ -113,6 +116,9 @@ importers:
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.4.0
+      tinymce:
+        specifier: ^8.3.2
+        version: 8.3.2
       ua-parser-js:
         specifier: ^2.0.7
         version: 2.0.7
@@ -2708,6 +2714,15 @@ packages:
     resolution: {integrity: sha512-HsvHaOo+o52cVcPhomKDZ3CMpTF/B2qg+BhPHIQJwzn4VIqDyt/rRVqtIomG6jE83IFsE2vlr6cmx7h3dHA0SA==}
     peerDependencies:
       vue: ^2.7.0 || ^3.0.0
+
+  '@tinymce/tinymce-vue@6.3.0':
+    resolution: {integrity: sha512-DSP8Jhd3XqCCliTnusfbmz3D8GqQ4iRzkc4aadYHDcJPVjkaqopJ61McOdH82CSy599vGLkPjGzqJYWJkRMiUA==}
+    peerDependencies:
+      tinymce: ^8.0.0 || ^7.0.0 || ^6.0.0 || ^5.5.1
+      vue: ^3.0.0
+    peerDependenciesMeta:
+      tinymce:
+        optional: true
 
   '@tiptap/core@2.27.2':
     resolution: {integrity: sha512-ABL1N6eoxzDzC1bYvkMbvyexHacszsKdVPYqhl5GwHLOvpZcv9VE9QaKwDILTyz5voCA0lGcAAXZp+qnXOk5lQ==}
@@ -8005,6 +8020,9 @@ packages:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
     engines: {node: '>=12.0.0'}
 
+  tinymce@8.3.2:
+    resolution: {integrity: sha512-iZ8aIUtrgGOw2AkukNf8spUM0LOzNLoCHRepwXQwWmHxP2TI5LzHjjG0SmXGxbya4EmoD5/pAox0ZXJfLO5DUw==}
+
   tippy.js@6.3.7:
     resolution: {integrity: sha512-E1d3oP2emgJ9dRQZdf3Kkn0qJgI6ZLpyS5z6ZkY1DF3kaQaBsGZsndEpHwx+eC+tYM41HaSNvNtLx8tU57FzTQ==}
 
@@ -11389,6 +11407,12 @@ snapshots:
     dependencies:
       '@tanstack/virtual-core': 3.13.9
       vue: 3.5.26(typescript@5.9.3)
+
+  '@tinymce/tinymce-vue@6.3.0(tinymce@8.3.2)(vue@3.5.26(typescript@5.9.3))':
+    dependencies:
+      vue: 3.5.26(typescript@5.9.3)
+    optionalDependencies:
+      tinymce: 8.3.2
 
   '@tiptap/core@2.27.2(@tiptap/pm@2.27.2)':
     dependencies:
@@ -18111,6 +18135,8 @@ snapshots:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
+
+  tinymce@8.3.2: {}
 
   tippy.js@6.3.7:
     dependencies:

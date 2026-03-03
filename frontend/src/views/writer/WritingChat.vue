@@ -52,7 +52,7 @@
     <main class="workspace">
       <div v-if="isMobile && currentSession" class="mobile-tab-toggle">
         <el-radio-group v-model="mobileTab" size="small">
-          <el-radio-button label="chat">对话</el-radio-button>
+          <el-radio-button label="chat">瀵硅瘽</el-radio-button>
           <el-radio-button label="editor">文稿</el-radio-button>
         </el-radio-group>
       </div>
@@ -164,6 +164,7 @@
         </template>
         <OfficialDocEditor
           v-else
+          class="editor-body"
           ref="editorRef"
           v-model="draft"
           :save-status="saveStatusText"
@@ -322,6 +323,59 @@ function normalizeDraft(raw: Partial<WriterDraft> | null | undefined, sessionTit
     signing_org: (raw?.signing_org || '').trim(),
     date: (raw?.date || '').trim(),
   }
+}
+
+function extractBodyNodeText(node: unknown): string {
+  if (!node || typeof node !== 'object') {
+    return ''
+  }
+
+  const current = node as Record<string, unknown>
+  if (current.type === 'text') {
+    return typeof current.text === 'string' ? current.text : ''
+  }
+  if (current.type === 'hardBreak') {
+    return '\n'
+  }
+
+  const content = Array.isArray(current.content) ? current.content : []
+  return content.map(child => extractBodyNodeText(child)).join('')
+}
+
+function extractH1TitleFromBody(bodyJson: unknown): string {
+  if (!bodyJson || typeof bodyJson !== 'object') {
+    return ''
+  }
+
+  const content = Array.isArray((bodyJson as Record<string, unknown>).content)
+    ? ((bodyJson as Record<string, unknown>).content as unknown[])
+    : []
+
+  for (const node of content) {
+    if (!node || typeof node !== 'object') {
+      continue
+    }
+
+    const current = node as Record<string, unknown>
+    if (current.type !== 'heading') {
+      continue
+    }
+
+    const attrs = (current.attrs && typeof current.attrs === 'object')
+      ? (current.attrs as Record<string, unknown>)
+      : {}
+    const level = Number(attrs.level ?? 2)
+    if (level !== 1) {
+      continue
+    }
+
+    const text = extractBodyNodeText(current).trim()
+    if (text) {
+      return text
+    }
+  }
+
+  return ''
 }
 
 function renderContent(msg: ChatMessage): string {
@@ -497,7 +551,7 @@ async function selectSession(session: ChatSession) {
 
   const saved = await flushDraftBeforeSwitch()
   if (!saved) {
-    ElMessage.warning('上一个会话草稿保存失败，已保留本地未保存状态')
+    ElMessage.warning('上一会话草稿保存失败，已保留本地未保存状态')
   }
 
   currentSession.value = session
@@ -745,7 +799,8 @@ async function exportDoc() {
     const blobUrl = URL.createObjectURL(resp.data)
     const a = window.document.createElement('a')
     a.href = blobUrl
-    a.download = `${draft.value.title || currentSession.value.title || '公文'}.docx`
+    const exportTitle = extractH1TitleFromBody(draft.value.body_json) || draft.value.title || '公文'
+    a.download = `${exportTitle}.docx`
     a.click()
     URL.revokeObjectURL(blobUrl)
 
@@ -940,14 +995,14 @@ onBeforeUnmount(() => {
 
 .session-item:hover {
   background: var(--wc-gray-100);
-  border-color: var(--wc-black);
+  border-color: var(--wc-gray-300);
   box-shadow: var(--w-shadow-sm);
 }
 
 .session-item.active {
   background: var(--wc-white);
-  border-color: var(--wc-black);
-  box-shadow: var(--w-shadow-md);
+  border-color: var(--wc-gray-300);
+  box-shadow: inset 0 0 0 1px var(--wc-gray-400), var(--w-shadow-md);
 }
 
 .session-item.active .session-title,
@@ -957,8 +1012,8 @@ onBeforeUnmount(() => {
 
 .session-item.active .session-tag {
   color: var(--wc-black);
-  border-color: var(--wc-black);
-  background: var(--wc-white);
+  border-color: var(--wc-gray-300);
+  background: var(--wc-gray-50);
 }
 
 .session-info {
@@ -1029,7 +1084,9 @@ onBeforeUnmount(() => {
 
 .workspace {
   flex: 1;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(420px, 1fr);
 }
@@ -1053,6 +1110,12 @@ onBeforeUnmount(() => {
 .editor-panel {
   background: var(--wc-white);
   border-left: 1px solid var(--wc-gray-200);
+  height: 100%;
+}
+
+.editor-body {
+  flex: 1;
+  min-height: 0;
 }
 
 .chat-header,
@@ -1120,7 +1183,7 @@ onBeforeUnmount(() => {
 
 .avatar.user {
   color: var(--wc-black);
-  border: 1px solid var(--wc-black);
+  border: 1px solid var(--wc-gray-300);
   background: var(--wc-white);
   box-shadow: 0 3px 8px rgb(0 0 0 / 10%);
 }
@@ -1175,7 +1238,7 @@ onBeforeUnmount(() => {
 }
 
 .workflow-item.is-error .workflow-dot {
-  border-color: var(--wc-black);
+  border-color: var(--wc-gray-500);
   background: var(--wc-white);
 }
 
@@ -1200,7 +1263,7 @@ onBeforeUnmount(() => {
 .message.user .bubble {
   color: var(--wc-white);
   border-top-right-radius: var(--w-radius-sm);
-  border: 1px solid var(--wc-black);
+  border: none;
   background: var(--wc-black);
   white-space: pre-wrap;
 }
@@ -1402,3 +1465,4 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+

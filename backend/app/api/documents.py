@@ -89,7 +89,7 @@ def export_editor_document(
     parser = EditorDocParser()
     normalized_draft = parser.normalize_draft(
         req.draft.model_dump(),
-        title_fallback=session.title or "",
+        title_fallback="",
     )
     content_json = parser.draft_to_content_json(normalized_draft)
 
@@ -99,7 +99,11 @@ def export_editor_document(
     gen = DocxGenerator()
     filepath = gen.generate(content_json)
 
-    title = normalized_draft.get("title") or session.title or "公文"
+    title = (
+        str(content_json.get("title", "") or "").strip()
+        or str(normalized_draft.get("title", "") or "").strip()
+        or "公文"
+    )
     doc_type = req.doc_type or session.doc_type or ""
 
     doc = GeneratedDocument(
@@ -167,3 +171,4 @@ def download_document(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=f"{doc.title or '公文'}.docx",
     )
+

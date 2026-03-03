@@ -102,8 +102,8 @@ class EditorDocParser:
             if not isinstance(attrs, dict):
                 raise ValueError("heading attrs must be an object")
             level = attrs.get("level", 2)
-            if level not in (2, 3):
-                raise ValueError("heading level must be 2 or 3")
+            if level not in (1, 2, 3):
+                raise ValueError("heading level must be 1, 2 or 3")
 
         if node_type == "text":
             text = node.get("text", "")
@@ -120,10 +120,10 @@ class EditorDocParser:
 
     def draft_to_content_json(self, draft: dict[str, Any]) -> dict[str, Any]:
         normalized = self.normalize_draft(draft)
-        body_sections = self.tiptap_body_to_sections(normalized["body_json"])
+        title, body_sections = self.tiptap_body_to_title_and_sections(normalized["body_json"])
 
         return {
-            "title": normalized["title"],
+            "title": title or normalized["title"],
             "doc_number": "",
             "recipients": normalized["recipients"],
             "body_sections": body_sections,
@@ -134,11 +134,11 @@ class EditorDocParser:
 
     def draft_to_plain_text(self, draft: dict[str, Any]) -> str:
         normalized = self.normalize_draft(draft)
-        sections = self.tiptap_body_to_sections(normalized["body_json"])
+        title, sections = self.tiptap_body_to_title_and_sections(normalized["body_json"])
 
         lines: list[str] = []
-        if normalized["title"]:
-            lines.append(normalized["title"])
+        if title or normalized["title"]:
+            lines.append(title or normalized["title"])
         if normalized["recipients"]:
             lines.append(normalized["recipients"])
 
@@ -158,10 +158,16 @@ class EditorDocParser:
         return "\n".join(lines).strip()
 
     def tiptap_body_to_sections(self, body_json: dict[str, Any]) -> list[dict[str, Any]]:
+        _, sections = self.tiptap_body_to_title_and_sections(body_json)
+        return sections
+
+    def tiptap_body_to_title_and_sections(self, body_json: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
         self.validate_body_json(body_json)
 
         root_content = body_json.get("content") or []
         sections: list[dict[str, Any]] = []
+        title = ""
+        title_consumed = False
 
         pending_heading = ""
         pending_level = 1
@@ -169,14 +175,23 @@ class EditorDocParser:
         for node in root_content:
             node_type = node.get("type")
             if node_type == "heading":
+                editor_level = self._extract_heading_level(node)
+                heading_text = self._extract_text(node).strip()
+
+                # Use the first h1 as document title instead of a body section heading.
+                if editor_level == 1 and not title_consumed and heading_text:
+                    title = heading_text
+                    title_consumed = True
+                    continue
+
                 if pending_heading:
                     sections.append({
                         "heading": pending_heading,
                         "content": "",
                         "level": pending_level,
                     })
-                pending_heading = self._extract_text(node).strip()
-                pending_level = self._map_heading_level(node.get("attrs", {}).get("level", 2))
+                pending_heading = heading_text
+                pending_level = self._map_heading_level(editor_level)
                 continue
 
             if node_type == "paragraph":
@@ -203,10 +218,23 @@ class EditorDocParser:
                 "level": pending_level,
             })
 
-        return sections
+        return title, sections
 
     def _map_heading_level(self, editor_level: int) -> int:
-        return 1 if editor_level == 2 else 2
+        if editor_level in (1, 2):
+            return 1
+        if editor_level == 3:
+            return 2
+        return 1
+
+    def _extract_heading_level(self, node: Any) -> int:
+        if not isinstance(node, dict):
+            return 2
+        attrs = node.get("attrs") or {}
+        if not isinstance(attrs, dict):
+            return 2
+        level = attrs.get("level", 2)
+        return level if level in (1, 2, 3) else 2
 
     def _extract_text(self, node: Any) -> str:
         if not isinstance(node, dict):
@@ -230,3 +258,4 @@ class EditorDocParser:
 
     def clone_default_body_json(self) -> dict[str, Any]:
         return copy.deepcopy(self.default_body_json())
+
