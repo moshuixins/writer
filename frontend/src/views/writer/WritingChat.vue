@@ -217,7 +217,7 @@ import apiChat from '@/api/modules/chat'
 import apiDocuments from '@/api/modules/documents'
 import { useUserStore } from '@/store/modules/user'
 import type { ChatMessage, ChatSession, ChatWorkflowStep, WriterDraft } from '@/types/writer'
-import dayjs from '@/utils/dayjs'
+import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
 import { DOC_TYPES } from '@/utils/constants'
 import OfficialDocEditor from './components/OfficialDocEditor.vue'
 
@@ -438,7 +438,7 @@ async function persistDraft(
 
     draftDirty.value = false
     saveState.value = 'saved'
-    lastSavedAt.value = data.updated_at ? dayjs(data.updated_at).format('HH:mm:ss') : dayjs().format('HH:mm:ss')
+    lastSavedAt.value = data.updated_at ? dayjs(data.updated_at).tz(SHANGHAI_TZ).format('HH:mm:ss') : dayjs().tz(SHANGHAI_TZ).format('HH:mm:ss')
     return true
   } catch {
     saveState.value = 'error'
@@ -522,7 +522,7 @@ async function selectSession(session: ChatSession) {
 
     draftDirty.value = false
     saveState.value = draftResp.data.exists ? 'saved' : 'idle'
-    lastSavedAt.value = draftResp.data.updated_at ? dayjs(draftResp.data.updated_at).format('HH:mm:ss') : ''
+    lastSavedAt.value = draftResp.data.updated_at ? dayjs(draftResp.data.updated_at).tz(SHANGHAI_TZ).format('HH:mm:ss') : ''
   } catch {
     messages.value = []
     hydratingDraft.value = true
@@ -829,7 +829,7 @@ async function renameSession(session: ChatSession) {
 }
 
 function formatDate(value: string) {
-  return value ? dayjs(value).format('MM-DD HH:mm') : '-'
+  return value ? dayjs(value).tz(SHANGHAI_TZ).format('MM-DD HH:mm') : '-'
 }
 
 function handleResize() {
@@ -854,23 +854,63 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .writing-chat {
+  --wc-black: var(--w-color-black);
+  --wc-white: var(--w-color-white);
+  --wc-gray-900: var(--w-gray-900);
+  --wc-gray-800: var(--w-gray-800);
+  --wc-gray-700: var(--w-gray-700);
+  --wc-gray-600: var(--w-gray-600);
+  --wc-gray-500: var(--w-gray-500);
+  --wc-gray-400: var(--w-gray-400);
+  --wc-gray-300: var(--w-gray-300);
+  --wc-gray-200: var(--w-gray-200);
+  --wc-gray-100: var(--w-gray-100);
+  --wc-gray-50: var(--w-gray-50);
+  --el-color-primary: var(--wc-black);
+  --el-color-primary-light-3: #3f3f3f;
+  --el-color-primary-light-5: #666666;
+  --el-color-primary-light-7: #949494;
+  --el-color-primary-light-8: #b8b8b8;
+  --el-color-primary-light-9: #ececec;
+  --el-color-primary-dark-2: #000000;
+  --el-color-success: var(--wc-black);
+  --el-color-warning: var(--wc-gray-700);
+  --el-color-danger: var(--wc-black);
+  --el-color-info: var(--wc-gray-600);
+  --el-text-color-primary: var(--wc-black);
+  --el-text-color-secondary: var(--wc-gray-600);
+  --el-border-color: var(--wc-gray-300);
+  --el-border-color-light: var(--wc-gray-200);
+  --el-border-color-lighter: var(--wc-gray-200);
+  --el-fill-color-light: var(--wc-gray-100);
+  --el-fill-color-lighter: var(--wc-gray-50);
   display: flex;
   height: calc(100vh - var(--g-header-height));
   position: relative;
-  background: var(--el-bg-color-page);
+  background: linear-gradient(180deg, var(--wc-white) 0%, var(--wc-gray-50) 100%);
+  color: var(--wc-gray-900);
+}
+
+.writing-chat :deep(.el-input__wrapper),
+.writing-chat :deep(.el-select__wrapper),
+.writing-chat :deep(.el-textarea__inner) {
+  border-radius: var(--w-radius-lg);
 }
 
 .sidebar {
   width: 280px;
   padding: 14px;
   overflow-y: auto;
-  background: var(--el-bg-color);
-  border-right: 1px solid var(--el-border-color-lighter);
+  background: var(--wc-white);
+  border-right: 1px solid var(--wc-gray-200);
+  box-shadow: 6px 0 20px rgb(0 0 0 / 3%);
 }
 
 .new-btn {
   width: 100%;
-  border-radius: 8px;
+  height: 40px;
+  border-radius: var(--w-radius-md);
+  box-shadow: var(--w-shadow-sm);
 }
 
 .session-search {
@@ -889,23 +929,36 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--wc-gray-200);
   text-align: left;
   padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
+  border-radius: var(--w-radius-lg);
+  background: var(--wc-white);
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .session-item:hover {
-  background: var(--el-fill-color-light);
-  border-color: var(--el-color-primary-light-7);
+  background: var(--wc-gray-100);
+  border-color: var(--wc-black);
+  box-shadow: var(--w-shadow-sm);
 }
 
 .session-item.active {
-  background: var(--el-color-primary-light-9);
-  border-color: var(--el-color-primary-light-5);
+  background: var(--wc-white);
+  border-color: var(--wc-black);
+  box-shadow: var(--w-shadow-md);
+}
+
+.session-item.active .session-title,
+.session-item.active .session-time {
+  color: var(--wc-black);
+}
+
+.session-item.active .session-tag {
+  color: var(--wc-black);
+  border-color: var(--wc-black);
+  background: var(--wc-white);
 }
 
 .session-info {
@@ -918,7 +971,7 @@ onBeforeUnmount(() => {
 
 .session-title {
   font-size: 14px;
-  color: var(--el-text-color-primary);
+  color: var(--wc-black);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -926,7 +979,7 @@ onBeforeUnmount(() => {
 
 .session-time {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--wc-gray-600);
 }
 
 .session-tag {
@@ -946,16 +999,32 @@ onBeforeUnmount(() => {
 
 .edit-btn,
 .delete-btn {
-  color: var(--el-text-color-placeholder);
+  color: var(--wc-gray-500);
+  padding: 2px;
+  border-radius: var(--w-radius-sm);
   cursor: pointer;
+  transition: all 0.18s ease;
 }
 
 .edit-btn:hover {
-  color: var(--el-color-primary);
+  color: var(--wc-black);
+  background: var(--wc-gray-100);
 }
 
 .delete-btn:hover {
-  color: var(--el-color-danger);
+  color: var(--wc-black);
+  background: var(--wc-gray-100);
+}
+
+.session-item.active .edit-btn,
+.session-item.active .delete-btn {
+  color: var(--wc-gray-500);
+}
+
+.session-item.active .edit-btn:hover,
+.session-item.active .delete-btn:hover {
+  color: var(--wc-black);
+  background: var(--wc-gray-100);
 }
 
 .workspace {
@@ -978,12 +1047,12 @@ onBeforeUnmount(() => {
 }
 
 .chat-panel {
-  background: var(--el-bg-color);
+  background: var(--wc-white);
 }
 
 .editor-panel {
-  background: var(--el-bg-color);
-  border-left: 1px solid var(--el-border-color-lighter);
+  background: var(--wc-white);
+  border-left: 1px solid var(--wc-gray-200);
 }
 
 .chat-header,
@@ -992,8 +1061,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   padding: 12px 18px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--wc-gray-200);
+  background: rgb(255 255 255 / 94%);
+  backdrop-filter: blur(3px);
 }
 
 .editor-header {
@@ -1004,12 +1074,12 @@ onBeforeUnmount(() => {
 .editor-header h3 {
   margin: 0;
   font-size: 16px;
-  color: var(--el-text-color-primary);
+  color: var(--wc-black);
 }
 
 .session-hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--wc-gray-600);
 }
 
 .session-toggle-btn {
@@ -1043,13 +1113,16 @@ onBeforeUnmount(() => {
 }
 
 .avatar.assistant {
-  color: #fff;
-  background: var(--el-color-primary);
+  color: var(--wc-white);
+  background: var(--wc-black);
+  box-shadow: 0 5px 12px rgb(0 0 0 / 16%);
 }
 
 .avatar.user {
-  color: #fff;
-  background: var(--el-color-success);
+  color: var(--wc-black);
+  border: 1px solid var(--wc-black);
+  background: var(--wc-white);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 10%);
 }
 
 .bubble-wrap {
@@ -1060,14 +1133,14 @@ onBeforeUnmount(() => {
 .workflow-card {
   margin-bottom: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--wc-gray-200);
+  border-radius: var(--w-radius-md);
+  background: var(--wc-gray-50);
 }
 
 .workflow-title {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--wc-gray-600);
   margin-bottom: 6px;
 }
 
@@ -1076,7 +1149,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--el-text-color-primary);
+  color: var(--wc-gray-900);
   line-height: 1.6;
 }
 
@@ -1088,20 +1161,22 @@ onBeforeUnmount(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--el-color-info);
+  border: 1px solid transparent;
+  background: var(--wc-gray-400);
   flex: 0 0 auto;
 }
 
 .workflow-item.is-running .workflow-dot {
-  background: var(--el-color-warning);
+  background: var(--wc-gray-600);
 }
 
 .workflow-item.is-done .workflow-dot {
-  background: var(--el-color-success);
+  background: var(--wc-black);
 }
 
 .workflow-item.is-error .workflow-dot {
-  background: var(--el-color-danger);
+  border-color: var(--wc-black);
+  background: var(--wc-white);
 }
 
 .workflow-text {
@@ -1109,30 +1184,32 @@ onBeforeUnmount(() => {
 }
 
 .workflow-detail {
-  color: var(--el-text-color-secondary);
+  color: var(--wc-gray-600);
   font-size: 12px;
 }
 
 .bubble {
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: var(--w-radius-lg);
   line-height: 1.7;
   font-size: 14px;
   word-break: break-word;
+  box-shadow: 0 6px 14px rgb(0 0 0 / 4%);
 }
 
 .message.user .bubble {
-  background: var(--el-color-primary);
-  color: #fff;
-  border-top-right-radius: 4px;
+  color: var(--wc-white);
+  border-top-right-radius: var(--w-radius-sm);
+  border: 1px solid var(--wc-black);
+  background: var(--wc-black);
   white-space: pre-wrap;
 }
 
 .message.assistant .bubble {
-  background: #fff;
-  border: 1px solid var(--el-border-color-lighter);
-  border-top-left-radius: 4px;
-  color: var(--el-text-color-primary);
+  color: var(--wc-black);
+  border-top-left-radius: var(--w-radius-sm);
+  border: 1px solid var(--wc-gray-200);
+  background: var(--wc-white);
 }
 
 .message.sending {
@@ -1147,17 +1224,19 @@ onBeforeUnmount(() => {
 
 .msg-actions .el-button {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--wc-gray-600);
+  border-radius: var(--w-radius-sm);
 }
 
 .msg-actions .el-button:hover {
-  color: var(--el-color-primary);
+  color: var(--wc-black);
+  background: var(--wc-gray-100);
 }
 
 .input-area {
   padding: 14px 18px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
+  border-top: 1px solid var(--wc-gray-200);
+  background: var(--wc-white);
 }
 
 .actions {
@@ -1169,7 +1248,7 @@ onBeforeUnmount(() => {
 .empty-tip {
   padding: 20px 8px;
   text-align: center;
-  color: var(--el-text-color-secondary);
+  color: var(--wc-gray-600);
   font-size: 13px;
 }
 
@@ -1179,7 +1258,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--el-text-color-secondary);
+  color: var(--wc-gray-600);
   gap: 12px;
 }
 
@@ -1208,18 +1287,18 @@ onBeforeUnmount(() => {
 }
 
 .markdown-body :deep(code) {
-  background: var(--el-fill-color-light);
+  color: var(--wc-black);
+  background: var(--wc-gray-100);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--w-radius-sm);
   font-size: 13px;
-  color: #b91c1c;
 }
 
 .markdown-body :deep(pre) {
-  background: #0f172a;
-  color: #e2e8f0;
+  color: var(--wc-white);
+  background: var(--wc-black);
   padding: 14px;
-  border-radius: 8px;
+  border-radius: var(--w-radius-md);
   overflow-x: auto;
   margin: 8px 0;
 }
@@ -1231,12 +1310,12 @@ onBeforeUnmount(() => {
 }
 
 .markdown-body :deep(blockquote) {
-  border-left: 3px solid var(--el-color-primary);
+  border-left: 3px solid var(--wc-black);
   padding: 8px 12px;
-  color: var(--el-text-color-regular);
+  color: var(--wc-gray-800);
   margin: 8px 0;
-  background: var(--el-fill-color-lighter);
-  border-radius: 0 4px 4px 0;
+  background: var(--wc-gray-100);
+  border-radius: 0 var(--w-radius-sm) var(--w-radius-sm) 0;
 }
 
 @media (hover: none) {
@@ -1257,7 +1336,7 @@ onBeforeUnmount(() => {
     width: min(84vw, 320px);
     transform: translateX(-100%);
     transition: transform 0.2s ease;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+    box-shadow: var(--w-shadow-md);
   }
 
   .sidebar.is-mobile-open {
@@ -1269,7 +1348,7 @@ onBeforeUnmount(() => {
     position: absolute;
     inset: 0;
     z-index: 20;
-    background: rgba(12, 18, 28, 0.35);
+    background: rgb(0 0 0 / 38%);
   }
 
   .mobile-session-trigger {

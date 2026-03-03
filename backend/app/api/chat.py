@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Literal
@@ -16,6 +17,7 @@ from app.models.user import User
 from app.services.context_bridge import ContextBridge
 from app.services.draft_service import DraftService
 from app.services.writing_service import WritingService
+from app.timezone import to_shanghai_iso
 
 router = APIRouter()
 ctx_bridge = ContextBridge()
@@ -25,6 +27,14 @@ DEFAULT_BODY_JSON = {
     "type": "doc",
     "content": [{"type": "paragraph"}],
 }
+
+
+async def _commit_ov_session_safely(ov_session_id: str) -> None:
+    try:
+        await asyncio.wait_for(ctx_bridge.commit_session(ov_session_id), timeout=5.0)
+        logger.info("OV session committed: %s", ov_session_id)
+    except Exception as e:
+        logger.warning("OV commit skipped/failed: %s", e)
 
 
 class CreateSessionRequest(BaseModel):
@@ -114,7 +124,7 @@ def update_session(
         "title": session.title,
         "doc_type": session.doc_type,
         "status": session.status,
-        "created_at": session.created_at.isoformat(),
+        "created_at": to_shanghai_iso(session.created_at),
     }
 
 
@@ -131,7 +141,7 @@ def list_sessions(
             "title": s.title,
             "doc_type": s.doc_type,
             "status": s.status,
-            "created_at": s.created_at.isoformat(),
+            "created_at": to_shanghai_iso(s.created_at),
         }
         for s in sessions
     ]
@@ -159,7 +169,7 @@ def get_messages(
             "id": m.id,
             "role": m.role,
             "content": m.content,
-            "created_at": m.created_at.isoformat(),
+            "created_at": to_shanghai_iso(m.created_at),
         }
         for m in msgs
     ]
@@ -196,7 +206,7 @@ def save_session_draft(
     return {
         "exists": True,
         "session_id": session_id,
-        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "updated_at": to_shanghai_iso(row.updated_at),
         "save_mode": req.save_mode,
         "draft": normalized_draft,
     }
@@ -365,16 +375,10 @@ async def delete_session(
     if not session:
         raise HTTPException(404, "会话不存在")
 
-    if session.ov_session_id:
-        try:
-            await ctx_bridge.commit_session(session.ov_session_id)
-            logger.info("OV session committed: %s", session.ov_session_id)
-        except Exception as e:
-            logger.warning("OV commit failed: %s", e)
+    ov_session_id = session.ov_session_id or ""
 
     docs = db.query(GeneratedDocument).filter(
         GeneratedDocument.session_id == session_id,
-        GeneratedDocument.user_id == current_user.id,
     ).all()
     doc_paths = [doc.docx_file_path for doc in docs if doc.docx_file_path]
 
@@ -382,11 +386,9 @@ async def delete_session(
         db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete(synchronize_session=False)
         db.query(SessionDraft).filter(
             SessionDraft.session_id == session_id,
-            SessionDraft.user_id == current_user.id,
         ).delete(synchronize_session=False)
         db.query(GeneratedDocument).filter(
             GeneratedDocument.session_id == session_id,
-            GeneratedDocument.user_id == current_user.id,
         ).delete(synchronize_session=False)
         db.delete(session)
         db.commit()
@@ -399,6 +401,9 @@ async def delete_session(
             e,
         )
         raise HTTPException(500, "删除会话失败，请稍后重试")
+
+    if ov_session_id:
+        asyncio.create_task(_commit_ov_session_safely(ov_session_id))
 
     for doc_path in doc_paths:
         try:

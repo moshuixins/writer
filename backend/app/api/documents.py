@@ -14,6 +14,7 @@ from app.models.user import User
 from app.services.docx_generator import DocxGenerator
 from app.services.draft_service import DraftService
 from app.services.editor_doc_parser import EditorDocParser
+from app.timezone import to_shanghai_iso
 
 router = APIRouter()
 
@@ -139,7 +140,7 @@ def list_export_history(
                 "title": d.title,
                 "doc_type": d.doc_type,
                 "version": d.version,
-                "created_at": d.created_at.isoformat(),
+                "created_at": to_shanghai_iso(d.created_at),
             }
             for d in docs
         ],

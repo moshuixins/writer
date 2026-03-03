@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     openviking_server_url: str = "http://127.0.0.1:1933"
     openviking_config_file: str = str(PROJECT_ROOT / "data" / "openviking" / "ov.conf")
     openviking_root_api_key: str = "ov-writer-secret-key-change-me"
+    # Backend container writable staging dir (host-mapped) for OV import text files.
+    openviking_shared_backend_dir: str = str(PROJECT_ROOT / "data" / "openviking" / "workspace" / "_staging")
+    # Same staging dir as seen from OpenViking container.
+    openviking_shared_ov_dir: str = "/app/data/_staging"
 
     # File paths
     upload_dir: str = str(PROJECT_ROOT / "data" / "uploads")

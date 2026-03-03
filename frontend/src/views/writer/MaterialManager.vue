@@ -115,7 +115,7 @@ import { Document } from '@element-plus/icons-vue'
 import apiMaterials from '@/api/modules/materials'
 import { useUserStore } from '@/store/modules/user'
 import type { Material, MaterialListParams } from '@/types/writer'
-import dayjs from '@/utils/dayjs'
+import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
 import { DOC_TYPES } from '@/utils/constants'
 
 const userStore = useUserStore()
@@ -392,7 +392,7 @@ async function batchClassify() {
 }
 
 function formatDate(value: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-'
+  return value ? dayjs(value).tz(SHANGHAI_TZ).format('YYYY-MM-DD HH:mm') : '-'
 }
 
 onMounted(() => {
@@ -411,6 +411,13 @@ onUnmounted(() => {
 <style scoped>
 .material-manager {
   padding: 24px;
+  color: var(--w-color-black);
+  background: linear-gradient(180deg, var(--w-color-white) 0%, var(--w-gray-50) 100%);
+}
+
+.material-manager :deep(.el-input__wrapper),
+.material-manager :deep(.el-select__wrapper) {
+  border-radius: var(--w-radius-md);
 }
 
 .header {
@@ -430,13 +437,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
+  color: var(--w-color-black);
 }
 
 .page-subtitle {
   margin: 0;
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--w-gray-600);
 }
 
 .filters {
@@ -456,14 +463,15 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: var(--el-color-warning-light-9);
-  border-radius: 8px;
-  border: 1px solid var(--el-color-warning-light-5);
+  background: var(--w-gray-50);
+  border-radius: var(--w-radius-md);
+  border: 1px solid var(--w-gray-200);
+  box-shadow: var(--w-shadow-xs);
 }
 
 .batch-actions span {
   font-size: 13px;
-  color: var(--el-color-warning);
+  color: var(--w-gray-700);
   font-weight: 500;
 }
 
@@ -473,14 +481,17 @@ onUnmounted(() => {
 
 .material-table {
   margin-top: 16px;
-  border-radius: 8px;
+  border: 1px solid var(--w-gray-200);
+  border-radius: var(--w-radius-md);
+  background: var(--w-color-white);
+  box-shadow: var(--w-shadow-xs);
   overflow: hidden;
 }
 
 .empty-state {
   padding: 40px;
   text-align: center;
-  color: var(--el-text-color-secondary);
+  color: var(--w-gray-600);
 }
 
 .empty-state p {
@@ -495,13 +506,13 @@ onUnmounted(() => {
 
 .upload-dialog-text {
   margin: 4px 0 12px;
-  color: var(--el-text-color-regular);
+  color: var(--w-gray-700);
   font-size: 14px;
 }
 
 .upload-dialog-subtext {
   margin: 10px 0 0;
-  color: var(--el-text-color-secondary);
+  color: var(--w-gray-600);
   font-size: 12px;
 }
 

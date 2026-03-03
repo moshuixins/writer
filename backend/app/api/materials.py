@@ -17,6 +17,7 @@ from app.prompts.validators import (
     validate_title,
 )
 from app.errors import logger
+from app.timezone import to_shanghai_iso
 
 router = APIRouter()
 ctx_bridge = ContextBridge()
@@ -181,7 +182,7 @@ def list_materials(
                 "summary": m.summary,
                 "keywords": m.keywords,
                 "char_count": svc.calculate_char_count(m.content_text or ""),
-                "created_at": m.created_at.isoformat(),
+                "created_at": to_shanghai_iso(m.created_at),
             }
             for m in materials
         ],
@@ -227,7 +228,7 @@ def get_material(
         "content_text": m.content_text,
         "char_count": char_count,
         "original_filename": m.original_filename,
-        "created_at": m.created_at.isoformat(),
+        "created_at": to_shanghai_iso(m.created_at),
     }
 
 

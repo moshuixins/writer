@@ -54,7 +54,7 @@ import { ElMessage } from 'element-plus'
 import { FolderOpened } from '@element-plus/icons-vue'
 import apiDocuments from '@/api/modules/documents'
 import type { ExportDoc } from '@/types/writer'
-import dayjs from '@/utils/dayjs'
+import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
 
 const docs = ref<ExportDoc[]>([])
 const loading = ref(false)
@@ -94,7 +94,7 @@ async function download(row: ExportDoc) {
 }
 
 function formatDate(value: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-'
+  return value ? dayjs(value).tz(SHANGHAI_TZ).format('YYYY-MM-DD HH:mm') : '-'
 }
 
 function onPageSizeChange(size: number) {
@@ -111,6 +111,8 @@ onMounted(() => {
 <style scoped>
 .history-page {
   padding: 24px;
+  color: var(--w-color-black);
+  background: linear-gradient(180deg, var(--w-color-white) 0%, var(--w-gray-50) 100%);
 }
 
 .page-header {
@@ -127,24 +129,27 @@ onMounted(() => {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
+  color: var(--w-color-black);
 }
 
 .page-subtitle {
   margin: 0;
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--w-gray-600);
 }
 
 .history-table {
-  border-radius: 8px;
+  border: 1px solid var(--w-gray-200);
+  border-radius: var(--w-radius-md);
+  background: var(--w-color-white);
+  box-shadow: var(--w-shadow-xs);
   overflow: hidden;
 }
 
 .empty-state {
   padding: 40px;
   text-align: center;
-  color: var(--el-text-color-secondary);
+  color: var(--w-gray-600);
 }
 
 .empty-state p {

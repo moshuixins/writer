@@ -1,8 +1,10 @@
 import asyncio
-import tempfile
-import os
-import httpx
+import uuid
+from pathlib import Path
 from typing import Optional
+
+import httpx
+
 from app.config import get_settings
 from app.errors import OpenVikingError, logger
 
@@ -13,7 +15,7 @@ RETRY_DELAY = 1.0
 
 
 class ContextBridge:
-    """OpenViking HTTP 适配层，替代 ChromaDB 向量检索和部分记忆管理"""
+    """HTTP adapter for OpenViking."""
 
     def __init__(self):
         self._base_url = settings.openviking_server_url.rstrip("/")
@@ -36,91 +38,98 @@ class ContextBridge:
             await self._client.aclose()
             self._client = None
 
-    # ============= 素材管理 =============
+    async def _delayed_cleanup(self, file_path: Path, delay_seconds: int = 900) -> None:
+        await asyncio.sleep(delay_seconds)
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except Exception as e:
+            logger.warning("Failed to cleanup OV staging file %s: %s", file_path, e)
 
-    async def add_material(self, file_path: str, doc_type: str = "", title: str = "", content_text: str = "") -> dict:
-        """将素材添加到 OpenViking 资源库
-
-        优先使用已提取的纯文本（写入临时txt文件），避免 OV 解析 docx 兼容性问题。
-        """
+    async def add_material(
+        self,
+        file_path: str,
+        doc_type: str = "",
+        title: str = "",
+        content_text: str = "",
+    ) -> dict:
+        """Add material resource to OpenViking."""
         client = await self._ensure_client()
         target = f"viking://resources/materials/{doc_type}" if doc_type else None
 
         actual_path = file_path
-        tmp_file = None
+        staged_file: Path | None = None
 
         if content_text:
-            # 写入临时 txt 文件，让 OV 解析纯文本
-            tmp_file = tempfile.NamedTemporaryFile(
-                mode="w", suffix=".txt", encoding="utf-8", delete=False,
-            )
-            tmp_file.write(content_text)
-            tmp_file.close()
-            actual_path = tmp_file.name
+            # The OpenViking service runs in another container.
+            # Write text into a shared host-mounted directory and pass OV-visible path.
+            backend_staging_dir = Path(settings.openviking_shared_backend_dir)
+            backend_staging_dir.mkdir(parents=True, exist_ok=True)
+            staged_file = backend_staging_dir / f"{uuid.uuid4().hex}.txt"
+            staged_file.write_text(content_text, encoding="utf-8")
+
+            ov_staging_dir = settings.openviking_shared_ov_dir.rstrip("/")
+            actual_path = f"{ov_staging_dir}/{staged_file.name}" if ov_staging_dir else str(staged_file)
 
         try:
-            resp = await client.post("/api/v1/resources", json={
-                "path": actual_path,
-                "target": target,
-                "reason": f"公文素材: {title}",
-                "instruction": f"类型: {doc_type}, 标题: {title}",
-                "wait": True,
-                "timeout": 120.0,
-            })
+            resp = await client.post(
+                "/api/v1/resources",
+                json={
+                    "path": actual_path,
+                    "target": target,
+                    "reason": f"公文素材: {title}",
+                    "instruction": f"类型: {doc_type}, 标题: {title}",
+                    "wait": True,
+                    "timeout": 120.0,
+                },
+            )
             return self._parse_response(resp)
         finally:
-            if tmp_file:
-                try:
-                    os.unlink(tmp_file.name)
-                except OSError:
-                    pass
+            if staged_file is not None:
+                # Keep file briefly to avoid parser race, then cleanup in background.
+                asyncio.create_task(self._delayed_cleanup(staged_file))
 
     async def delete_material(self, uri: str) -> None:
-        """删除素材资源"""
+        """Delete a material resource."""
         client = await self._ensure_client()
-        resp = await client.post("/api/v1/fs/rm", json={
-            "uri": uri, "recursive": True,
-        })
+        resp = await client.post("/api/v1/fs/rm", json={"uri": uri, "recursive": True})
         self._parse_response(resp)
 
-    # ============= 语义检索 =============
-
-    async def search_materials(
-        self, query: str, doc_type: str = None, top_k: int = 5,
-    ) -> list[dict]:
-        """语义搜索素材（替代 VectorStore.search）"""
+    async def search_materials(self, query: str, doc_type: str = None, top_k: int = 5) -> list[dict]:
+        """Semantic search for material resources."""
         client = await self._ensure_client()
-        target_uri = ""
-        if doc_type:
-            target_uri = f"viking://resources/materials/{doc_type}"
-        resp = await client.post("/api/v1/search/find", json={
-            "query": query,
-            "target_uri": target_uri,
-            "limit": top_k,
-        })
+        target_uri = f"viking://resources/materials/{doc_type}" if doc_type else ""
+        resp = await client.post(
+            "/api/v1/search/find",
+            json={
+                "query": query,
+                "target_uri": target_uri,
+                "limit": top_k,
+            },
+        )
         data = self._parse_response(resp)
         results = []
         for item in data.get("results", []):
-            results.append({
-                "text": item.get("content", ""),
-                "metadata": {
-                    "uri": item.get("uri", ""),
-                    "title": item.get("title", ""),
-                    "score": item.get("score", 0),
+            results.append(
+                {
+                    "text": item.get("content", ""),
+                    "metadata": {
+                        "uri": item.get("uri", ""),
+                        "title": item.get("title", ""),
+                        "score": item.get("score", 0),
+                    },
                 },
-            })
+            )
         return results
 
-    # ============= 会话管理 =============
-
     async def create_session(self) -> dict:
-        """在 OpenViking 创建会话"""
+        """Create a session in OpenViking."""
         client = await self._ensure_client()
         resp = await client.post("/api/v1/sessions", json={})
         return self._parse_response(resp)
 
     async def add_message(self, session_id: str, role: str, content: str) -> dict:
-        """向 OpenViking 会话添加消息"""
+        """Append a message to an OpenViking session."""
         client = await self._ensure_client()
         resp = await client.post(
             f"/api/v1/sessions/{session_id}/messages",
@@ -129,7 +138,7 @@ class ContextBridge:
         return self._parse_response(resp)
 
     async def commit_session(self, session_id: str) -> dict:
-        """提交会话，触发 OpenViking 自动提取记忆"""
+        """Commit a session to trigger memory extraction."""
         client = await self._ensure_client()
         resp = await client.post(
             f"/api/v1/sessions/{session_id}/commit",
@@ -137,16 +146,17 @@ class ContextBridge:
         )
         return self._parse_response(resp)
 
-    # ============= 记忆上下文 =============
-
     async def get_memory_context(self, query: str) -> str:
-        """从 OpenViking 检索用户记忆，构建上下文字符串"""
+        """Fetch memory snippets from OpenViking and return merged text."""
         client = await self._ensure_client()
-        resp = await client.post("/api/v1/search/find", json={
-            "query": query,
-            "target_uri": "viking://user/",
-            "limit": 5,
-        })
+        resp = await client.post(
+            "/api/v1/search/find",
+            json={
+                "query": query,
+                "target_uri": "viking://user/",
+                "limit": 5,
+            },
+        )
         data = self._parse_response(resp)
         parts = []
         for item in data.get("results", []):
@@ -155,10 +165,8 @@ class ContextBridge:
                 parts.append(content)
         return "\n".join(parts) if parts else ""
 
-    # ============= 健康检查 =============
-
     async def health_check(self) -> bool:
-        """检查 OpenViking Server 是否可用"""
+        """Check whether OpenViking server is reachable."""
         try:
             client = await self._ensure_client()
             resp = await client.get("/health", timeout=5.0)
@@ -166,10 +174,8 @@ class ContextBridge:
         except Exception:
             return False
 
-    # ============= 内部方法 =============
-
     async def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
-        """带重试的HTTP请求"""
+        """Issue HTTP request with retry."""
         last_error = None
         for attempt in range(MAX_RETRIES + 1):
             try:
@@ -178,13 +184,20 @@ class ContextBridge:
                 return resp
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_error = e
-                logger.warning("OpenViking %s %s failed (attempt %d/%d): %s", method.upper(), url, attempt + 1, MAX_RETRIES + 1, e)
+                logger.warning(
+                    "OpenViking %s %s failed (attempt %d/%d): %s",
+                    method.upper(),
+                    url,
+                    attempt + 1,
+                    MAX_RETRIES + 1,
+                    e,
+                )
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(RETRY_DELAY * (attempt + 1))
         raise OpenVikingError(detail=f"连接失败: {last_error}")
 
     def _parse_response(self, resp: httpx.Response) -> dict:
-        """解析 OpenViking HTTP 响应"""
+        """Parse OpenViking HTTP response."""
         if resp.status_code >= 400:
             detail = ""
             try:

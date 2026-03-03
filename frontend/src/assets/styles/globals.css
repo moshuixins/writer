@@ -1,6 +1,33 @@
 /* 页面布局 CSS 变量 */
 :root {
   color-scheme: light;
+  --w-color-black: #0d0d0d;
+  --w-color-white: #ffffff;
+  --w-gray-900: #1f1f1f;
+  --w-gray-800: #2f2f2f;
+  --w-gray-700: #444444;
+  --w-gray-600: #5f5f5f;
+  --w-gray-500: #777777;
+  --w-gray-400: #9a9a9a;
+  --w-gray-300: #cccccc;
+  --w-gray-200: #e8e8e8;
+  --w-gray-100: #f5f5f5;
+  --w-gray-50: #fafafa;
+  --w-radius-sm: 6px;
+  --w-radius-md: 8px;
+  --w-radius-lg: 10px;
+  --w-shadow-xs: 0 2px 8px rgb(0 0 0 / 4%);
+  --w-shadow-sm: 0 6px 14px rgb(0 0 0 / 8%);
+  --w-shadow-md: 0 10px 24px rgb(0 0 0 / 14%);
+  --w-btn-primary-bg: var(--w-color-black);
+  --w-btn-primary-text: var(--w-color-white);
+  --w-btn-primary-hover-bg: var(--w-gray-900);
+  --w-btn-primary-active-bg: #000000;
+  --w-btn-secondary-bg: var(--w-color-white);
+  --w-btn-secondary-text: var(--w-color-black);
+  --w-btn-secondary-border: var(--w-color-black);
+  --w-btn-secondary-hover-bg: var(--w-gray-100);
+  --w-btn-secondary-active-bg: #ebebeb;
 
   /* 头部高度 */
   --g-header-height: 60px;
@@ -83,4 +110,28 @@ body {
 /* textarea 字体跟随系统 */
 textarea {
   font-family: inherit;
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--w-btn-primary-bg);
+  --el-button-border-color: var(--w-btn-primary-bg);
+  --el-button-text-color: var(--w-btn-primary-text);
+  --el-button-hover-bg-color: var(--w-btn-primary-hover-bg);
+  --el-button-hover-border-color: var(--w-btn-primary-hover-bg);
+  --el-button-active-bg-color: var(--w-btn-primary-active-bg);
+  --el-button-active-border-color: var(--w-btn-primary-active-bg);
+  --el-button-active-text-color: var(--w-btn-primary-text);
+}
+
+.el-button--default,
+.el-button--primary.is-plain {
+  --el-button-bg-color: var(--w-btn-secondary-bg);
+  --el-button-border-color: var(--w-btn-secondary-border);
+  --el-button-text-color: var(--w-btn-secondary-text);
+  --el-button-hover-bg-color: var(--w-btn-secondary-hover-bg);
+  --el-button-hover-border-color: var(--w-btn-secondary-border);
+  --el-button-hover-text-color: var(--w-btn-secondary-text);
+  --el-button-active-bg-color: var(--w-btn-secondary-active-bg);
+  --el-button-active-border-color: var(--w-btn-secondary-border);
+  --el-button-active-text-color: var(--w-btn-secondary-text);
 }

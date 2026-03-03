@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.chat import ChatSession, SessionDraft
 from app.services.editor_doc_parser import EditorDocParser
+from app.timezone import to_shanghai_iso
 
 
 class DraftService:
@@ -43,7 +44,7 @@ class DraftService:
         return {
             "exists": True,
             "session_id": session_id,
-            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            "updated_at": to_shanghai_iso(row.updated_at),
             "draft": draft,
         }
 
