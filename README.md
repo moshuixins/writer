@@ -1,271 +1,179 @@
-# 公文写作助手
+﻿# 公文写作助手
 
-智能公文写作平台，基于 AI 多轮对话生成标准公文，支持素材语义检索、风格学习、隐式记忆、流式输出。
+一个面向公文场景的智能写作系统，集成多轮对话、素材检索、书籍学习、风格学习与文档导出，支持账号隔离与角色权限控制。
+
+## 功能概览
+
+- 多轮写作对话（SSE 流式输出，工作流步骤可视化）
+- 素材管理（上传解析、分类、批量操作、语义检索）
+- 书籍学习（EPUB/PDF 导入、OCR、规则提炼、知识检索）
+- 风格学习（统计特征 + 术语/关键词 + LLM 风格结构化分析）
+- 文档导出（GB/T 9704-2012 格式的 docx）
+- 账户隔离与权限控制（RABC：账户 + 角色 + 权限）
 
 ## 技术栈
 
-- 后端：FastAPI + SQLAlchemy + LangChain + SiliconFlow (DeepSeek-V3.2)
-- 前端：Vue 3.5 + TypeScript + Vite 7 + Element Plus + UnoCSS + Pinia 3 (基于 Fantastic-admin)
-- 向量检索与记忆：OpenViking（字节跳动开源 AI Agent 上下文数据库）
-- 文档生成：python-docx（GB/T 9704-2012 标准格式）
+- 后端：FastAPI + SQLAlchemy + LangChain + Python
+- 前端：Vue 3 + TypeScript + Vite + Element Plus + Pinia（基于 Fantastic-admin）
+- 向量与记忆：OpenViking
 - 部署：Docker Compose
 
 ## 项目结构
 
 ```
 writer/
-├── .env.example                  # 环境变量模板
-├── docker-compose.yml            # Docker 编排（backend + frontend + openviking）
-├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── app/
-│       ├── main.py               # FastAPI 入口、CORS、限流中间件
-│       ├── config.py             # 配置管理（路径自动计算）
-│       ├── database.py           # SQLAlchemy 连接
-│       ├── auth.py               # JWT 认证
-│       ├── api/                  # API 路由
-│       ├── services/             # 业务逻辑
-│       ├── models/               # 数据库模型（含复合索引）
-│       └── prompts/              # LLM Prompt 模板
-├── frontend/                     # 基于 Fantastic-admin 的前端
-│   ├── Dockerfile                # Node 22 + pnpm 多阶段构建
-│   ├── nginx.conf                # Nginx 反向代理配置
-│   └── src/
-│       ├── views/
-│       │   ├── login.vue             # 登录页（含注册）
-│       │   └── writer/
-│       │       ├── WritingChat.vue       # 写作对话页（SSE 打字机效果）
-│       │       ├── MaterialManager.vue   # 素材管理页
-│       │       ├── BookLearning.vue      # 书籍学习页（扫描/导入/任务进度）
-│       │       ├── ExportHistory.vue     # 导出历史页
-│       │       └── Settings.vue          # 偏好设置页
-│       ├── api/modules/          # API 模块（chat/materials/books/documents/preferences）
-│       ├── types/writer.ts       # 业务类型定义
-│       ├── utils/constants.ts    # 公文类型常量
-│       └── store/modules/user.ts # 认证状态管理
-└── data/
-    ├── openviking/ov.conf        # OpenViking 配置（本地，已加入 .gitignore）
-    ├── openviking/ov.conf.example# OpenViking 配置示例（可提交）
-    ├── book/                     # 书籍目录（EPUB/PDF）
-    ├── uploads/                  # 上传文件存储
-    └── exports/                  # 导出文件存储
+  .env.example
+  deploy.sh
+  docker-compose.yml
+  backend/
+    Dockerfile
+    requirements.txt
+    app/
+      main.py
+      config.py
+      database.py
+      auth.py
+      api/
+      models/
+      services/
+      prompts/
+  frontend/
+    Dockerfile
+    nginx.conf
+    src/
+      views/
+      api/
+      store/
+      types/
+  data/
+    openviking/
+      ov.conf            # 本地配置（已加入 .gitignore）
+      ov.conf.example    # 配置示例（可提交）
+      workspace/
+    book/
+    uploads/
+    exports/
 ```
 
-## 架构设计
+## 快速开始（Docker）
 
-```
-┌─────────────────────────────────────────────────────┐
-│           Frontend (Vue 3.5 + Element Plus + UnoCSS)   │
-│  登录  │  写作对话  │  素材管理  │  导出历史  │  设置  │
-└───────────────────┬─────────────────────────────────┘
-                    │ REST API + SSE
-┌───────────────────▼─────────────────────────────────┐
-│               FastAPI Backend                        │
-│                                                      │
-│  认证: JWT (注册/登录/鉴权)                           │
-│  安全: CORS 白名单 + IP 限流 (60 req/min)            │
-│                                                      │
-│  API层:                                              │
-│    /api/auth        用户认证                          │
-│    /api/chat        写作对话 (含 SSE 流式)            │
-│    /api/materials   素材管理 (含批量操作)              │
-│    /api/documents   文档导出与历史                     │
-│    /api/preferences 用户偏好                          │
-│                                                      │
-│  服务层:                                              │
-│    WritingService   写作引导与内容生成                 │
-│    MaterialService  素材上传、解析、分类/摘要          │
-│    StyleAnalyzer    风格学习与特征提取                 │
-│    DocxGenerator    GB/T 9704 公文格式生成             │
-│    ContextBridge    OpenViking 适配层                  │
-│    LLMService       LLM 调用封装 (含流式)             │
-│                                                      │
-│  AI层: LangChain + SiliconFlow (DeepSeek-V3.2)      │
-└──────┬──────────────┬──────────────┬─────────────────┘
-    SQLite        OpenViking        文件系统
-  (结构化数据)  (向量+记忆+会话)   (原始文件)
-```
+### 1) 准备配置
 
-## 核心功能
-
-### 用户认证
-- JWT Token 认证，所有 API 均需登录
-- 注册 / 登录，密码 bcrypt 加密
-- 数据按用户隔离，含所有权校验
-
-### 写作对话
-- 多轮对话式写作：分析需求 → 列出所需材料 → 生成公文
-- SSE 流式输出，AI 回复逐字显示（打字机效果）
-- RAG 检索 top 5 相关参考范文辅助生成
-- OpenViking 自动提取写作习惯（隐式记忆）
-- 消息发送失败自动回滚，DOMPurify 防 XSS
-
-### 素材管理
-- 上传 docx/pdf/txt 文件，自动提取文本
-- LLM 自动分类（通知、报告、请示、批复、函、纪要等）
-- LLM 自动生成摘要，jieba 提取关键词
-- 支持批量删除、批量分类
-- OpenViking 层级检索（L0摘要 → L1概览 → L2全文）
-- 分页、搜索防抖、上传进度显示
-
-### 风格学习
-- 分析上传素材的写作风格特征（用词、句式、结构）
-- 按公文类型积累风格指南
-- 生成时自动应用对应类型的风格规范
-
-### 书籍学习（新增）
-- 扫描 `data/book` 下的 `.epub/.pdf`
-- PDF 优先文本层提取，扫描版自动 OCR（Tesseract）
-- 书籍分片写入 OpenViking `viking://resources/books/*`
-- 提炼并持久化 `book_sources`、`book_style_rules`
-- 写作流式步骤新增：`检索书籍知识`、`融合书籍风格规则`
-- 仅提炼写法，不直引原文（生成端禁止连续 20 字以上复用）
-
-### 文档导出
-- 生成符合 GB/T 9704-2012 标准的 docx 文件
-- 支持标题、正文、落款等公文要素格式化
-- 导出历史记录，支持重新下载
-
-### 记忆系统
-- 显式偏好：用户手动设置的写作偏好（SQLAlchemy 存储）
-- 隐式记忆：OpenViking 自动从对话中提取用户习惯、偏好等
-- 记忆去重与热度衰减，自动管理生命周期
-
-### 安全机制
-- JWT 认证，所有接口鉴权
-- CORS 白名单（仅允许配置的前端域名）
-- IP 级滑动窗口限流（默认 60 次/分钟）
-- 数据所有权校验（403 拒绝越权访问）
-- DOMPurify 前端 XSS 防护
-
-## 快速开始
-
-### Docker 部署（推荐）
-
-1. 复制环境变量模板并填写：
+- 复制环境变量：
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入你的 API Key 和 Secret Key
 ```
 
-2. 启动所有服务：
+- 复制 OpenViking 配置示例：
 
 ```bash
-docker compose up -d
+cp data/openviking/ov.conf.example data/openviking/ov.conf
 ```
 
-启动顺序：OpenViking（等待健康检查通过）→ Backend → Frontend
+- 修改 `.env` 和 `data/openviking/ov.conf` 中的密钥与模型配置：
+  - `SECRET_KEY` 必须替换为随机值
+  - `OPENVIKING_ROOT_API_KEY` 必须替换
+  - OpenViking 配置里的 `root_api_key` 必须与上面一致
 
-3. 访问 `http://localhost`，注册账号即可使用。
-
-### 本地开发
+### 2) 一键部署
 
 ```bash
-# 后端
+bash deploy.sh
+```
+
+访问：
+- 前端：`http://localhost`
+- 后端：`http://localhost:8000/docs`
+
+## 账号与权限
+
+- 注册必须使用一次性邀请码（由管理员创建）
+- 管理员页面：
+  - `/admin/overview`
+  - `/admin/accounts`
+  - `/admin/roles`
+- 初始管理员可通过环境变量注入：
+
+```
+INITIAL_ADMIN_USERNAME=
+INITIAL_ADMIN_PASSWORD=
+INITIAL_ADMIN_DISPLAY_NAME=admin
+INITIAL_ADMIN_DEPARTMENT=admin
+```
+
+## 书籍学习
+
+- 书籍目录：`data/book`
+- 支持：EPUB / PDF（扫描版 PDF 自动 OCR）
+- 学习结果：
+  - `book_sources`：来源与导入状态
+  - `book_style_rules`：写作规则
+- 写作时自动检索书籍知识并融合风格规则
+
+## 风格学习
+
+- 素材上传后自动分析：
+  - 统计特征（句长、段长、句/段数量）
+  - 关键词/术语（Jieba + LLM 总结）
+  - LLM 风格结构化分析（开头/结尾/结构/句式/过渡词等）
+  - 数据要素（类型/用法/主题归属）
+
+## 上下文与记忆
+
+- 会话上下文：最近 20 条消息，以 Chat API messages 方式传入
+- 长期记忆：按账户写入 OpenViking memory 命名空间
+
+## 环境变量
+
+关键配置见 `.env.example`：
+
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_MODEL`
+- `OPENAI_EMBEDDING_MODEL`
+- `OPENVIKING_SERVER_URL`
+- `OPENVIKING_ROOT_API_KEY`
+- `SECRET_KEY`
+- 书籍学习与 OCR 相关配置
+
+## 常见问题
+
+### 1) 报错：SECRET_KEY must be overridden
+- 说明：生产安全校验，必须替换默认密钥。
+- 处理：修改 `.env` 中 `SECRET_KEY` 与 `OPENVIKING_ROOT_API_KEY`。
+
+### 2) OpenViking 认证失败
+- 确认 `.env` 中 `OPENVIKING_ROOT_API_KEY` 与 `data/openviking/ov.conf` 中 `root_api_key` 一致。
+
+## 本地开发
+
+后端：
+```bash
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
+```
 
-# 前端（需要 Node >= 22.12，pnpm >= 10）
+前端：
+```bash
 cd frontend
 pnpm install
 pnpm dev
 ```
 
-前端开发服务器默认 `http://localhost:9000`，已配置代理转发 `/api` 到后端。
+前端默认 `http://localhost:9000`，已配置 `/api` 代理。
 
-### 环境变量
+## API 概览
 
-参考 `.env.example`：
+- `/api/auth` 用户认证
+- `/api/accounts` 账户/角色/邀请码管理
+- `/api/chat` 写作对话（含 SSE）
+- `/api/materials` 素材管理 + 书籍学习接口
+- `/api/documents` 文档导出与历史
+- `/api/preferences` 用户偏好
 
-| 变量 | 说明 | 示例 |
-|------|------|------|
-| `OPENAI_API_KEY` | LLM API 密钥 | `sk-xxx` |
-| `OPENAI_BASE_URL` | API 地址 | `https://api.siliconflow.cn/v1` |
-| `OPENAI_MODEL` | 对话模型 | `deepseek-ai/DeepSeek-V3.2` |
-| `OPENAI_EMBEDDING_MODEL` | 向量模型 | `Qwen/Qwen3-Embedding-8B` |
-| `OPENVIKING_SERVER_URL` | OV 地址（Docker: `http://openviking:1933`） | `http://127.0.0.1:1933` |
-| `SECRET_KEY` | JWT 签名密钥 | 随机字符串 |
+## 说明
 
-## API 接口
-
-后端启动后可访问 `http://localhost:8000/docs` 查看 Swagger 文档。
-
-### 认证 `/api/auth`
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/register` | 用户注册 |
-| POST | `/login` | 用户登录，返回 JWT Token |
-
-### 写作对话 `/api/chat`（需认证）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/sessions` | 创建写作会话 |
-| GET | `/sessions` | 获取会话列表 |
-| GET | `/sessions/{id}/messages` | 获取会话消息历史 |
-| POST | `/send` | 发送消息，同步返回 AI 回复 |
-| POST | `/send-stream` | 发送消息，SSE 流式返回 AI 回复 |
-| DELETE | `/sessions/{id}` | 删除会话 |
-| POST | `/sessions/{id}/finish` | 结束会话（触发记忆提取） |
-| POST | `/review` | AI 审核公文内容 |
-
-### 素材管理 `/api/materials`（需认证）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/upload` | 上传素材文件（docx/pdf/txt） |
-| GET | `/` | 获取素材列表，支持 `doc_type`、`keyword` 筛选 |
-| GET | `/search?query=` | 语义搜索素材 |
-| GET | `/{id}` | 获取素材详情 |
-| DELETE | `/{id}` | 删除素材 |
-| POST | `/batch-delete` | 批量删除素材 |
-| POST | `/batch-classify` | 批量重新分类 |
-| GET | `/books/scan` | 扫描书籍目录，返回已导入状态 |
-| POST | `/books/import` | 启动书籍学习任务（支持 `rebuild`） |
-| GET | `/books/tasks/{task_id}` | 查询书籍学习任务进度 |
-| GET | `/books/sources` | 查询书籍导入历史记录 |
-
-### 文档管理 `/api/documents`（需认证）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/export` | 导出公文为 docx（GB/T 9704 格式） |
-| GET | `/history` | 导出历史列表 |
-| GET | `/history/{id}/download` | 重新下载历史文档 |
-
-### 用户偏好 `/api/preferences`（需认证）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/` | 获取用户所有偏好 |
-| PUT | `/` | 设置单个偏好 |
-| PUT | `/batch` | 批量设置偏好 |
-
-## OpenViking 整合说明
-
-通过 `ContextBridge` 适配层（HTTP 客户端）接入 OpenViking，无需 C++ 编译依赖。
-
-**由 OpenViking 负责：**
-- 向量检索：层级递归检索（L0摘要 → L1概览 → L2全文）
-- 隐式记忆：会话结束自动提取用户写作习惯等
-- 会话上下文：分层加载，按需使用 token
-
-**保留自有实现：**
-- 公文分类/摘要、风格学习、docx 生成、显式偏好
-
-**优雅降级：** OpenViking 未启动时系统正常运行，语义检索和隐式记忆功能不可用，写作生成使用"暂无参考范文"兜底。
-
-## 书籍学习 CLI
-
-```bash
-cd backend
-python -m app.jobs.import_books --dir ../data/book --rebuild
-```
-
-可选参数：
-- `--selected-file <文件名或相对路径>`（可重复传入）
-- `--rebuild`（清空书籍知识后全量重建）
+- `data/openviking/ov.conf` 不应提交到 Git（已加入 `.gitignore`）。
+- 系统不使用数据库迁移工具，启动时通过 `schema_bootstrap` 进行增量补齐。
