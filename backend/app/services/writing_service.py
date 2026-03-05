@@ -2,6 +2,8 @@
 
 from typing import Any, Generator
 
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -33,8 +35,8 @@ BOOK_REUSE_CONSTRAINTS = """
 3. Prefer user-provided materials over book snippets when conflicts appear.
 """
 
-MAX_CONTEXT_MESSAGES = 10
-MAX_CONTEXT_MESSAGE_CHARS = 1200
+MAX_CONTEXT_MESSAGES = 20
+MAX_CONTEXT_MESSAGE_CHARS = 0
 
 
 class WritingService:
@@ -94,7 +96,7 @@ class WritingService:
         first_para = paragraphs[0] if paragraphs else (user_data or "")[:200]
         return f"{doc_type} {first_para[:150]}"
 
-    def _build_session_context(self, session_id: int) -> str:
+    def _build_session_messages(self, session_id: int, current_user_text: str = "") -> list[BaseMessage]:
         recent_messages = (
             self.db.query(ChatMessage)
             .filter(
@@ -107,25 +109,27 @@ class WritingService:
         )
 
         if not recent_messages:
-            return ""
+            return []
 
-        lines: list[str] = []
+        trimmed = (current_user_text or "").strip()
+        if trimmed and recent_messages:
+            latest = recent_messages[0]
+            latest_content = (latest.content or "").strip()
+            if latest.role == "user" and latest_content == trimmed:
+                recent_messages = recent_messages[1:]
+
+        messages: list[BaseMessage] = []
         for msg in reversed(recent_messages):
             content = (msg.content or "").strip()
             if not content:
                 continue
-            if len(content) > MAX_CONTEXT_MESSAGE_CHARS:
+            if MAX_CONTEXT_MESSAGE_CHARS > 0 and len(content) > MAX_CONTEXT_MESSAGE_CHARS:
                 content = f"{content[:MAX_CONTEXT_MESSAGE_CHARS]}...(内容已截断)"
-            role = "用户" if msg.role == "user" else "助手"
-            lines.append(f"{role}：{content}")
-        return "\n\n".join(lines)
-
-    def _merge_user_data_with_context(self, session_id: int, user_data: str) -> str:
-        current_request = (user_data or "").strip()
-        context = self._build_session_context(session_id)
-        if not context:
-            return current_request
-        return f"【用户当前请求】\n{current_request}\n\n【同会话最近对话上下文】\n{context}"
+            if msg.role == "assistant":
+                messages.append(AIMessage(content=content))
+            else:
+                messages.append(HumanMessage(content=content))
+        return messages
 
     async def _prepare_generate_prompt(
         self,
@@ -211,14 +215,13 @@ class WritingService:
         if memory_context:
             combined_prefs += f"\n\n从历史写作中学到的习惯：\n{memory_context}"
 
-        prompt_user_data = self._merge_user_data_with_context(session_id, user_data)
         prompt = get_prompt_set(doc_type)["generate"].format(
             doc_type=doc_type,
             doc_type_guide=doc_type_guide,
             style_guidelines=style_guide,
             reference_examples=ref_text,
             user_preferences=combined_prefs,
-            user_data=prompt_user_data,
+            user_data=(user_data or "").strip(),
         )
         prompt = f"{prompt}\n\n{PLAIN_TEXT_OUTPUT_REQUIREMENTS}\n\n{BOOK_REUSE_CONSTRAINTS}"
 
@@ -234,7 +237,9 @@ class WritingService:
 
     async def generate(self, session_id: int, user_data: str, user_prefs: str = "") -> str:
         prompt, _ = await self._prepare_generate_prompt(session_id, user_data, user_prefs)
-        return await self.llm.invoke_async(prompt)
+        history_messages = self._build_session_messages(session_id, current_user_text=user_data)
+        messages = [SystemMessage(content=prompt), *history_messages, HumanMessage(content=(user_data or "").strip())]
+        return await self.llm.invoke_messages_async(messages)
 
     def guidance_stream(self, request: str, doc_type: str) -> Generator[str, None, None]:
         resolved_doc_type = self._resolve_doc_type(doc_type)
@@ -252,7 +257,9 @@ class WritingService:
         user_prefs: str = "",
     ) -> tuple[Generator[str, None, None], dict[str, Any]]:
         prompt, meta = await self._prepare_generate_prompt(session_id, user_data, user_prefs)
-        return self.llm.stream(prompt), meta
+        history_messages = self._build_session_messages(session_id, current_user_text=user_data)
+        messages = [SystemMessage(content=prompt), *history_messages, HumanMessage(content=(user_data or "").strip())]
+        return self.llm.stream_messages(messages), meta
 
     async def generate_stream(self, session_id: int, user_data: str, user_prefs: str = "") -> Generator[str, None, None]:
         stream, _ = await self.generate_stream_with_meta(session_id, user_data, user_prefs)

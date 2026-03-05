@@ -5,6 +5,7 @@ services:
       - "1933:1933"
     volumes:
       - ./data/openviking/ov.conf:/app/ov.conf
+      - ./data/openviking/ov.conf.example:/app/ov.conf.example:ro
       - ./data/openviking/workspace:/app/data
       - ./data/openviking/entrypoint.sh:/app/entrypoint.sh:ro
     entrypoint: ["bash", "/app/entrypoint.sh"]

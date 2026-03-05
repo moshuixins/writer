@@ -36,3 +36,7 @@ frontend/dist/
 
 # Logs
 *.log
+
+# OpenViking config
+data/openviking/ov.conf
+

@@ -45,7 +45,8 @@ writer/
 │       ├── utils/constants.ts    # 公文类型常量
 │       └── store/modules/user.ts # 认证状态管理
 └── data/
-    ├── openviking/ov.conf        # OpenViking 配置
+    ├── openviking/ov.conf        # OpenViking 配置（本地，已加入 .gitignore）
+    ├── openviking/ov.conf.example# OpenViking 配置示例（可提交）
     ├── book/                     # 书籍目录（EPUB/PDF）
     ├── uploads/                  # 上传文件存储
     └── exports/                  # 导出文件存储

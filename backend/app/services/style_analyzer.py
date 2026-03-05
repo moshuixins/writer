@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 import re
 
 import jieba
@@ -8,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.errors import logger
 from app.models.style import StyleProfile
-from app.prompts.style_analysis import STYLE_ANALYSIS_PROMPT
-from app.prompts.validators import validate_style_json
+from app.prompts.style_analysis import STYLE_ANALYSIS_PROMPT, STYLE_KEYWORDS_PROMPT
+from app.prompts.validators import parse_json_response, validate_keywords, validate_style_json
 from app.services.llm_service import LLMService
 
 
@@ -38,15 +39,37 @@ class StyleAnalyzer:
 
     def analyze_vocabulary(self, text: str) -> dict:
         keywords = jieba.analyse.extract_tags(text or "", topK=20, withWeight=True)
+        domain_terms = jieba.analyse.extract_tags(text or "", topK=10)
+
+        llm_keywords: list[str] = []
+        llm_domain_terms: list[str] = []
+        try:
+            raw = self.llm.invoke(STYLE_KEYWORDS_PROMPT.format(content=text or ""))
+            parsed = parse_json_response(raw, silent=True)
+            if isinstance(parsed, dict):
+                kw_raw = parsed.get("keywords", [])
+                term_raw = parsed.get("domain_terms", [])
+                if isinstance(kw_raw, list):
+                    llm_keywords = validate_keywords(json.dumps(kw_raw, ensure_ascii=False), max_keywords=12)
+                elif isinstance(kw_raw, str):
+                    llm_keywords = validate_keywords(kw_raw, max_keywords=12)
+                if isinstance(term_raw, list):
+                    llm_domain_terms = validate_keywords(json.dumps(term_raw, ensure_ascii=False), max_keywords=12)
+                elif isinstance(term_raw, str):
+                    llm_domain_terms = validate_keywords(term_raw, max_keywords=12)
+        except Exception as e:
+            logger.warning("Style LLM keyword analysis failed: %s", e)
+
         return {
             "top_keywords": [{"word": w, "weight": round(s, 4)} for w, s in keywords],
-            "domain_terms": jieba.analyse.extract_tags(text or "", topK=10),
+            "domain_terms": domain_terms,
+            "llm_keywords": llm_keywords,
+            "llm_domain_terms": llm_domain_terms,
         }
 
     def analyze_with_llm(self, text: str) -> dict:
-        truncated = (text or "")[:3000]
         try:
-            result = self.llm.invoke(STYLE_ANALYSIS_PROMPT.format(content=truncated))
+            result = self.llm.invoke(STYLE_ANALYSIS_PROMPT.format(content=text or ""))
             return validate_style_json(result)
         except Exception as e:
             logger.warning("Style LLM analysis failed: %s", e)
@@ -104,9 +127,12 @@ class StyleAnalyzer:
                     f"平均段落长度约 {v.get('avg_paragraph_length', '未知')} 字"
                 )
             elif p.feature_name == "vocabulary":
-                terms = p.feature_value.get("domain_terms", [])
+                terms = p.feature_value.get("llm_domain_terms") or p.feature_value.get("domain_terms", [])
+                keywords = p.feature_value.get("llm_keywords") or []
                 if terms:
                     parts.append(f"- 常用术语：{', '.join(terms[:10])}")
+                if keywords:
+                    parts.append(f"- 关键词偏好：{', '.join(keywords[:10])}")
             elif p.feature_name == "llm_analysis":
                 v = p.feature_value
                 if "opening_pattern" in v:
@@ -127,5 +153,25 @@ class StyleAnalyzer:
                 if "transition_words" in v:
                     words = v["transition_words"][:6]
                     parts.append(f"- 过渡词：{', '.join(words)}")
+                data_elements = v.get("data_elements")
+                if isinstance(data_elements, list) and data_elements:
+                    for item in data_elements[:6]:
+                        if not isinstance(item, dict):
+                            continue
+                        dtype = str(item.get("type", "")).strip()
+                        topic = str(item.get("topic", "")).strip()
+                        usage = str(item.get("usage_pattern", "")).strip()
+                        example = str(item.get("value_example", "")).strip()
+                        line_parts = []
+                        if dtype:
+                            line_parts.append(f"类型：{dtype}")
+                        if topic:
+                            line_parts.append(f"主题：{topic}")
+                        if usage:
+                            line_parts.append(f"方式：{usage}")
+                        if example:
+                            line_parts.append(f"示例：{example}")
+                        if line_parts:
+                            parts.append(f"- 数据要素：{'；'.join(line_parts)}")
 
         return "\n".join(parts) if parts else "暂无风格数据"
