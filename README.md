@@ -139,6 +139,11 @@ INITIAL_ADMIN_DEPARTMENT=admin
 
 ## 常见问题
 
+## License
+
+Apache-2.0
+
+
 ### 1) 报错：SECRET_KEY must be overridden
 - 说明：生产安全校验，必须替换默认密钥。
 - 处理：修改 `.env` 中 `SECRET_KEY` 与 `OPENVIKING_ROOT_API_KEY`。
