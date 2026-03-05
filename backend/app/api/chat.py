@@ -1,19 +1,23 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
+import threading
+import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Generator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import require_permission
 from app.database import get_db
 from app.errors import logger
 from app.models.user import User
+from app.prompts.doc_types_catalog import OTHER_DOC_TYPE
+from app.prompts.validators import ensure_canonical_doc_type
 from app.services.context_bridge import ContextBridge
 from app.services.draft_service import DraftService
 from app.services.writing_service import WritingService
@@ -22,19 +26,39 @@ from app.timezone import to_shanghai_iso
 router = APIRouter()
 ctx_bridge = ContextBridge()
 
-
 DEFAULT_BODY_JSON = {
     "type": "doc",
     "content": [{"type": "paragraph"}],
 }
 
 
-async def _commit_ov_session_safely(ov_session_id: str) -> None:
-    try:
-        await asyncio.wait_for(ctx_bridge.commit_session(ov_session_id), timeout=5.0)
-        logger.info("OV session committed: %s", ov_session_id)
-    except Exception as e:
-        logger.warning("OV commit skipped/failed: %s", e)
+def _new_error_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+async def _iterate_sync_generator(gen: Generator[str, None, None]):
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[tuple[str, str | Exception | None]] = asyncio.Queue()
+
+    def worker() -> None:
+        try:
+            for item in gen:
+                loop.call_soon_threadsafe(queue.put_nowait, ("chunk", item))
+        except Exception as e:
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", e))
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    while True:
+        kind, payload = await queue.get()
+        if kind == "chunk":
+            yield str(payload or "")
+            continue
+        if kind == "error":
+            raise payload if isinstance(payload, Exception) else RuntimeError("stream failed")
+        break
 
 
 class CreateSessionRequest(BaseModel):
@@ -66,20 +90,27 @@ class SaveDraftRequest(BaseModel):
 
 class ReviewRequest(BaseModel):
     content: str
-    doc_type: str = "公文"
+    doc_type: str = OTHER_DOC_TYPE
 
 
 @router.post("/sessions")
 async def create_session(
     req: CreateSessionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:write")),
 ):
-    svc = WritingService(db)
+    canonical_doc_type = None
+    if req.doc_type:
+        try:
+            canonical_doc_type = ensure_canonical_doc_type(req.doc_type)
+        except ValueError:
+            raise HTTPException(400, "doc_type 非法，必须为规范文种")
+
+    svc = WritingService(db, account_id=current_user.account_id)
     session = svc.create_session(
         user_id=current_user.id,
         title=req.title,
-        doc_type=req.doc_type,
+        doc_type=canonical_doc_type,
     )
 
     try:
@@ -101,7 +132,7 @@ def update_session(
     session_id: int,
     req: UpdateSessionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:write")),
 ):
     from app.models.chat import ChatSession
 
@@ -110,6 +141,7 @@ def update_session(
         raise HTTPException(400, "标题不能为空")
 
     session = db.query(ChatSession).filter(
+        ChatSession.account_id == current_user.account_id,
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id,
     ).first()
@@ -131,9 +163,9 @@ def update_session(
 @router.get("/sessions")
 def list_sessions(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:read")),
 ):
-    svc = WritingService(db)
+    svc = WritingService(db, account_id=current_user.account_id)
     sessions = svc.get_sessions(user_id=current_user.id)
     return [
         {
@@ -151,18 +183,19 @@ def list_sessions(
 def get_messages(
     session_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:read")),
 ):
     from app.models.chat import ChatSession
 
     session = db.query(ChatSession).filter(
+        ChatSession.account_id == current_user.account_id,
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id,
     ).first()
     if not session:
         raise HTTPException(404, "会话不存在")
 
-    svc = WritingService(db)
+    svc = WritingService(db, account_id=current_user.account_id)
     msgs = svc.get_session_messages(session_id)
     return [
         {
@@ -179,9 +212,9 @@ def get_messages(
 def get_session_draft(
     session_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:read")),
 ):
-    draft_service = DraftService(db)
+    draft_service = DraftService(db, account_id=current_user.account_id)
     payload = draft_service.get_or_default_draft(
         user_id=current_user.id,
         session_id=session_id,
@@ -194,9 +227,9 @@ def save_session_draft(
     session_id: int,
     req: SaveDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:write")),
 ):
-    draft_service = DraftService(db)
+    draft_service = DraftService(db, account_id=current_user.account_id)
     row, normalized_draft = draft_service.upsert_draft(
         user_id=current_user.id,
         session_id=session_id,
@@ -216,18 +249,19 @@ def save_session_draft(
 async def send_message(
     req: ChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:write")),
 ):
     from app.models.chat import ChatSession
 
     session = db.query(ChatSession).filter(
+        ChatSession.account_id == current_user.account_id,
         ChatSession.id == req.session_id,
         ChatSession.user_id == current_user.id,
     ).first()
     if not session:
         raise HTTPException(404, "会话不存在")
 
-    svc = WritingService(db)
+    svc = WritingService(db, account_id=current_user.account_id)
 
     svc.add_message(req.session_id, "user", req.message)
 
@@ -240,8 +274,8 @@ async def send_message(
 
     msgs = svc.get_session_messages(req.session_id)
     if len(msgs) <= 1:
-        doc_type = session.doc_type or "公文"
-        reply = svc.get_guidance(req.message, doc_type)
+        doc_type = session.doc_type or OTHER_DOC_TYPE
+        reply = await asyncio.to_thread(svc.get_guidance, req.message, doc_type)
     else:
         reply = await svc.generate(req.session_id, req.message)
 
@@ -253,6 +287,16 @@ async def send_message(
         except Exception:
             pass
 
+    try:
+        await ctx_bridge.add_memory_note(
+            account_id=current_user.account_id,
+            session_id=req.session_id,
+            user_text=req.message,
+            assistant_text=reply,
+        )
+    except Exception as e:
+        logger.warning("Auto memory note skipped: %s", e)
+
     return {"reply": reply}
 
 
@@ -260,18 +304,19 @@ async def send_message(
 async def send_message_stream(
     req: ChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:write")),
 ):
     from app.models.chat import ChatSession
 
     session = db.query(ChatSession).filter(
+        ChatSession.account_id == current_user.account_id,
         ChatSession.id == req.session_id,
         ChatSession.user_id == current_user.id,
     ).first()
     if not session:
         raise HTTPException(404, "会话不存在")
 
-    svc = WritingService(db)
+    svc = WritingService(db, account_id=current_user.account_id)
     svc.add_message(req.session_id, "user", req.message)
 
     ov_sid = getattr(session, "ov_session_id", None)
@@ -283,7 +328,7 @@ async def send_message_stream(
 
     msgs = svc.get_session_messages(req.session_id)
     is_first = len(msgs) <= 1
-    doc_type = session.doc_type or "公文"
+    doc_type = session.doc_type or OTHER_DOC_TYPE
 
     async def event_generator():
         async def emit(event: str, **payload):
@@ -305,6 +350,10 @@ async def send_message_stream(
                     yield item
                 async for item in emit("workflow", step="搜索素材", status="running"):
                     yield item
+                async for item in emit("workflow", step="检索书籍知识", status="running"):
+                    yield item
+                async for item in emit("workflow", step="融合书籍风格规则", status="running"):
+                    yield item
 
                 chunks, meta = await svc.generate_stream_with_meta(req.session_id, req.message)
 
@@ -317,9 +366,16 @@ async def send_message_stream(
                     yield item
                 async for item in emit(
                     "workflow",
-                    step="加载历史记忆",
+                    step="检索书籍知识",
                     status="done",
-                    detail=f"命中 {meta.get('memory_count', 0)} 条记忆",
+                    detail=f"命中 {meta.get('book_reference_count', 0)} 条书籍参考",
+                ):
+                    yield item
+                async for item in emit(
+                    "workflow",
+                    step="融合书籍风格规则",
+                    status="done",
+                    detail=f"命中 {meta.get('book_rule_count', 0)} 条规则",
                 ):
                     yield item
                 async for item in emit("workflow", step="分析请求意图", status="done"):
@@ -327,7 +383,7 @@ async def send_message_stream(
                 async for item in emit("workflow", step="生成回复", status="running"):
                     yield item
 
-            for chunk in chunks:
+            async for chunk in _iterate_sync_generator(chunks):
                 full_reply += chunk
                 data = json.dumps({"chunk": chunk}, ensure_ascii=False)
                 yield f"data: {data}\n\n"
@@ -339,8 +395,9 @@ async def send_message_stream(
                 async for item in emit("workflow", step="生成回复", status="done"):
                     yield item
         except Exception as e:
-            logger.error("Stream error: %s", e)
-            err = json.dumps({"error": str(e)}, ensure_ascii=False)
+            error_id = _new_error_id()
+            logger.exception("Stream error. error_id=%s session=%s err=%s", error_id, req.session_id, e)
+            err = json.dumps({"error": f"流式生成失败（错误ID: {error_id}）"}, ensure_ascii=False)
             yield f"data: {err}\n\n"
 
         svc.add_message(req.session_id, "assistant", full_reply)
@@ -351,6 +408,16 @@ async def send_message_stream(
             except Exception:
                 pass
 
+        try:
+            await ctx_bridge.add_memory_note(
+                account_id=current_user.account_id,
+                session_id=req.session_id,
+                user_text=req.message,
+                assistant_text=full_reply,
+            )
+        except Exception as e:
+            logger.warning("Auto memory note skipped: %s", e)
+
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -359,35 +426,41 @@ async def send_message_stream(
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+
 @router.delete("/sessions/{session_id}")
 async def delete_session(
     session_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:write")),
 ):
     from app.models.chat import ChatMessage, ChatSession, SessionDraft
     from app.models.document import GeneratedDocument
 
     session = db.query(ChatSession).filter(
+        ChatSession.account_id == current_user.account_id,
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id,
     ).first()
     if not session:
         raise HTTPException(404, "会话不存在")
 
-    ov_session_id = session.ov_session_id or ""
-
     docs = db.query(GeneratedDocument).filter(
+        GeneratedDocument.account_id == current_user.account_id,
         GeneratedDocument.session_id == session_id,
     ).all()
     doc_paths = [doc.docx_file_path for doc in docs if doc.docx_file_path]
 
     try:
-        db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete(synchronize_session=False)
+        db.query(ChatMessage).filter(
+            ChatMessage.account_id == current_user.account_id,
+            ChatMessage.session_id == session_id,
+        ).delete(synchronize_session=False)
         db.query(SessionDraft).filter(
+            SessionDraft.account_id == current_user.account_id,
             SessionDraft.session_id == session_id,
         ).delete(synchronize_session=False)
         db.query(GeneratedDocument).filter(
+            GeneratedDocument.account_id == current_user.account_id,
             GeneratedDocument.session_id == session_id,
         ).delete(synchronize_session=False)
         db.delete(session)
@@ -401,9 +474,6 @@ async def delete_session(
             e,
         )
         raise HTTPException(500, "删除会话失败，请稍后重试")
-
-    if ov_session_id:
-        asyncio.create_task(_commit_ov_session_safely(ov_session_id))
 
     for doc_path in doc_paths:
         try:
@@ -420,11 +490,12 @@ async def delete_session(
 async def finish_session(
     session_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:write")),
 ):
     from app.models.chat import ChatSession
 
     session = db.query(ChatSession).filter(
+        ChatSession.account_id == current_user.account_id,
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id,
     ).first()
@@ -434,12 +505,38 @@ async def finish_session(
     session.status = "finished"
     db.commit()
 
-    if session.ov_session_id:
-        try:
-            await ctx_bridge.commit_session(session.ov_session_id)
-            logger.info("OV session committed: %s", session.ov_session_id)
-        except Exception as e:
-            logger.warning("OV commit failed: %s", e)
+    try:
+        from app.models.chat import ChatMessage
+
+        last_user = (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.account_id == current_user.account_id,
+                ChatMessage.session_id == session_id,
+                ChatMessage.role == "user",
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+        last_assistant = (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.account_id == current_user.account_id,
+                ChatMessage.session_id == session_id,
+                ChatMessage.role == "assistant",
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+
+        await ctx_bridge.add_memory_note(
+            account_id=current_user.account_id,
+            session_id=session_id,
+            user_text=(last_user.content if last_user else ""),
+            assistant_text=(last_assistant.content if last_assistant else ""),
+        )
+    except Exception as e:
+        logger.warning("Account memory note skipped: %s", e)
 
     return {"message": "会话已结束，记忆已提交"}
 
@@ -448,7 +545,11 @@ async def finish_session(
 def review_document(
     req: ReviewRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("chat:write")),
 ):
-    svc = WritingService(db)
-    return svc.review(req.content, req.doc_type)
+    try:
+        canonical_doc_type = ensure_canonical_doc_type(req.doc_type)
+    except ValueError:
+        raise HTTPException(400, "doc_type 非法，必须为规范文种")
+    svc = WritingService(db, account_id=current_user.account_id)
+    return svc.review(req.content, canonical_doc_type)

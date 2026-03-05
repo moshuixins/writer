@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -7,10 +7,12 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import require_permission
 from app.database import get_db
 from app.models.document import GeneratedDocument
 from app.models.user import User
+from app.prompts.doc_types_catalog import OTHER_DOC_TYPE
+from app.prompts.validators import ensure_canonical_doc_type
 from app.services.docx_generator import DocxGenerator
 from app.services.draft_service import DraftService
 from app.services.editor_doc_parser import EditorDocParser
@@ -28,7 +30,7 @@ DEFAULT_BODY_JSON = {
 class ExportRequest(BaseModel):
     content_json: dict
     title: str = ""
-    doc_type: str = ""
+    doc_type: str = OTHER_DOC_TYPE
     session_id: int | None = None
 
 
@@ -42,7 +44,7 @@ class WriterDraftPayload(BaseModel):
 
 class ExportEditorRequest(BaseModel):
     session_id: int
-    doc_type: str = ""
+    doc_type: str = OTHER_DOC_TYPE
     draft: WriterDraftPayload
 
 
@@ -50,23 +52,29 @@ class ExportEditorRequest(BaseModel):
 def export_document(
     req: ExportRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("documents:write")),
 ):
+    try:
+        canonical_doc_type = ensure_canonical_doc_type(req.doc_type)
+    except ValueError:
+        raise HTTPException(400, "doc_type 非法，必须为规范文种")
+
     gen = DocxGenerator()
     filepath = gen.generate(req.content_json)
 
     doc = GeneratedDocument(
+        account_id=current_user.account_id,
         user_id=current_user.id,
         session_id=req.session_id,
         title=req.title,
-        doc_type=req.doc_type,
+        doc_type=canonical_doc_type,
         content_json=req.content_json,
         docx_file_path=filepath,
     )
     db.add(doc)
     db.commit()
 
-    filename = f"{req.title or '公文'}.docx"
+    filename = f"{req.title or '文稿'}.docx"
     return FileResponse(
         filepath,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -78,9 +86,9 @@ def export_document(
 def export_editor_document(
     req: ExportEditorRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("documents:write")),
 ):
-    draft_service = DraftService(db)
+    draft_service = DraftService(db, account_id=current_user.account_id)
     session = draft_service.validate_session_owner(
         user_id=current_user.id,
         session_id=req.session_id,
@@ -102,11 +110,16 @@ def export_editor_document(
     title = (
         str(content_json.get("title", "") or "").strip()
         or str(normalized_draft.get("title", "") or "").strip()
-        or "公文"
+        or "文稿"
     )
-    doc_type = req.doc_type or session.doc_type or ""
+    resolved_doc_type = req.doc_type or session.doc_type or OTHER_DOC_TYPE
+    try:
+        doc_type = ensure_canonical_doc_type(resolved_doc_type)
+    except ValueError:
+        raise HTTPException(400, "doc_type 非法，必须为规范文种")
 
     doc = GeneratedDocument(
+        account_id=current_user.account_id,
         user_id=current_user.id,
         session_id=req.session_id,
         title=title,
@@ -130,9 +143,10 @@ def list_export_history(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("documents:read")),
 ):
     base_query = db.query(GeneratedDocument).filter(
+        GeneratedDocument.account_id == current_user.account_id,
         GeneratedDocument.user_id == current_user.id,
     )
     total = base_query.count()
@@ -156,9 +170,10 @@ def list_export_history(
 def download_document(
     doc_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("documents:read")),
 ):
     doc = db.query(GeneratedDocument).filter(
+        GeneratedDocument.account_id == current_user.account_id,
         GeneratedDocument.id == doc_id,
         GeneratedDocument.user_id == current_user.id,
     ).first()
@@ -169,6 +184,5 @@ def download_document(
     return FileResponse(
         doc.docx_file_path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=f"{doc.title or '公文'}.docx",
+        filename=f"{doc.title or '文稿'}.docx",
     )
-

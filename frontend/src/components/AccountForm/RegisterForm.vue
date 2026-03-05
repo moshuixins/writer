@@ -25,6 +25,7 @@ const loading = ref(false)
 const form = useForm({
   validationSchema: toTypedSchema(
     z.object({
+      invite_code: z.string().min(1, 'Invite code required'),
       account: z.string().min(1, '请输入用户名'),
       password: z.string().min(1, '请输入密码').min(6, '密码长度为6到18位').max(18, '密码长度为6到18位'),
       checkPassword: z.string().min(1, '请再次输入密码'),
@@ -35,6 +36,7 @@ const form = useForm({
   ),
   initialValues: {
     account: props.account ?? '',
+    invite_code: '',
     password: '',
     checkPassword: '',
   },
@@ -45,6 +47,7 @@ const onSubmit = form.handleSubmit(async (values) => {
     await userStore.register({
       username: values.account,
       password: values.password,
+      invite_code: values.invite_code,
     })
     ElMessage.success('注册成功，请登录')
     emits('onRegister', values.account)
@@ -71,6 +74,16 @@ const onSubmit = form.handleSubmit(async (values) => {
         <FormItem class="relative pb-6 space-y-0">
           <FormControl>
             <FaInput type="text" placeholder="请输入用户名" class="w-full" :class="errors.length && 'border-destructive'" v-bind="componentField" />
+          </FormControl>
+          <Transition enter-active-class="transition-opacity" enter-from-class="opacity-0" leave-active-class="transition-opacity" leave-to-class="opacity-0">
+            <FormMessage class="absolute bottom-1 text-xs" />
+          </Transition>
+        </FormItem>
+      </FormField>
+      <FormField v-slot="{ componentField, errors }" name="invite_code">
+        <FormItem class="relative pb-6 space-y-0">
+          <FormControl>
+            <FaInput type="text" placeholder="Invite code" class="w-full" :class="errors.length && 'border-destructive'" v-bind="componentField" />
           </FormControl>
           <Transition enter-active-class="transition-opacity" enter-from-class="opacity-0" leave-active-class="transition-opacity" leave-to-class="opacity-0">
             <FormMessage class="absolute bottom-1 text-xs" />

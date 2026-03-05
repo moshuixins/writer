@@ -43,6 +43,7 @@ export const useUserStore = defineStore(
     async function register(data: {
       username: string
       password: string
+      invite_code: string
       display_name?: string
     }) {
       const res = await apiUser.register(data)

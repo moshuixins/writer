@@ -32,6 +32,15 @@ const routes: RouteRecordRaw = {
       },
     },
     {
+      path: '/book-learning',
+      name: 'writerBookLearning',
+      component: () => import('@/views/writer/BookLearning.vue'),
+      meta: {
+        title: '书籍学习',
+        icon: 'i-ep:reading',
+      },
+    },
+    {
       path: '/history',
       name: 'writerHistory',
       component: () => import('@/views/writer/ExportHistory.vue'),

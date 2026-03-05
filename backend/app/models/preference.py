@@ -10,10 +10,11 @@ def _utcnow():
 class UserPreference(Base):
     __tablename__ = "user_preferences"
     __table_args__ = (
-        UniqueConstraint("user_id", "pref_key", name="uq_user_pref_key"),
+        UniqueConstraint("account_id", "user_id", "pref_key", name="uq_account_user_pref_key"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, default=1, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     pref_key = Column(String(100), nullable=False)
     pref_value = Column(Text, nullable=False)

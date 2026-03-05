@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+﻿from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+from app.auth import require_permission
 from app.database import get_db
-from app.auth import get_current_user
 from app.models.user import User
 from app.services.memory_service import MemoryService
 
@@ -24,10 +25,9 @@ class BatchPreferenceRequest(BaseModel):
 @router.get("")
 def get_preferences(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("preferences:read")),
 ):
-    """获取用户所有偏好"""
-    svc = MemoryService(db)
+    svc = MemoryService(db, account_id=current_user.account_id)
     return svc.get_preferences(user_id=current_user.id)
 
 
@@ -35,10 +35,9 @@ def get_preferences(
 def set_preference(
     req: SetPreferenceRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("preferences:write")),
 ):
-    """设置用户偏好"""
-    svc = MemoryService(db)
+    svc = MemoryService(db, account_id=current_user.account_id)
     svc.set_preference(user_id=current_user.id, key=req.key, value=req.value)
     return {"message": "偏好已保存"}
 
@@ -47,10 +46,9 @@ def set_preference(
 def set_preferences_batch(
     req: BatchPreferenceRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("preferences:write")),
 ):
-    """批量设置用户偏好"""
-    svc = MemoryService(db)
+    svc = MemoryService(db, account_id=current_user.account_id)
     for key, value in req.model_dump().items():
         svc.set_preference(user_id=current_user.id, key=key, value=value)
     return {"message": "偏好已保存"}

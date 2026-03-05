@@ -9,10 +9,10 @@ export default {
       password: data.password,
     }),
 
-  register: (data: { username: string, password: string, display_name?: string }) =>
+  register: (data: { username: string, password: string, invite_code: string, display_name?: string }) =>
     api.post('/api/auth/register', data),
 
-  permission: () => Promise.resolve({ data: { permissions: [] } }),
+  permission: () => api.get<{ permissions: string[] }>('/api/auth/permissions'),
 
   passwordEdit: (data: { password: string, newPassword: string }) =>
     api.post('/api/auth/change-password', data),

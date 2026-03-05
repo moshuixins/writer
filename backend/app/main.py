@@ -1,18 +1,24 @@
+﻿from __future__ import annotations
+
+import time
+from collections import defaultdict
+from uuid import uuid4
+
+import app.models  # noqa: F401
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.database import engine, Base
-from app.api import materials, chat, documents, preferences, auth
-from app.errors import AppError, setup_logging, logger
-from app.config import get_settings
-import time
-from collections import defaultdict
 
-# 初始化日志
+from app.api import accounts, auth, chat, documents, materials, preferences
+from app.config import get_settings
+from app.database import Base, engine
+from app.errors import AppError, logger, setup_logging
+from app.schema_bootstrap import ensure_account_schema
+
 setup_logging()
 
-# Create tables
 Base.metadata.create_all(bind=engine)
+ensure_account_schema(engine)
 
 app = FastAPI(title="公文写作助手", version="1.0.0")
 
@@ -27,14 +33,12 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-# ---------- 请求频率限制 ----------
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
 _rate_limit = settings.rate_limit_per_minute
 
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    # 健康检查和静态资源不限流
     if request.url.path in ("/api/health",):
         return await call_next(request)
 
@@ -42,7 +46,6 @@ async def rate_limit_middleware(request: Request, call_next):
     now = time.time()
     bucket = _rate_buckets[client_ip]
 
-    # 清理超过 60 秒的记录
     _rate_buckets[client_ip] = [t for t in bucket if now - t < 60]
     bucket = _rate_buckets[client_ip]
 
@@ -58,23 +61,33 @@ async def rate_limit_middleware(request: Request, call_next):
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
-    logger.warning("AppError: %s | detail: %s | path: %s", exc.message, exc.detail, request.url.path)
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.message, "detail": exc.detail},
+    error_id = uuid4().hex[:12]
+    logger.warning(
+        "AppError id=%s path=%s status=%s err=%s detail=%s",
+        error_id,
+        request.url.path,
+        exc.status_code,
+        exc.message,
+        exc.detail,
     )
+    content = {"error": exc.message}
+    if exc.status_code >= 500:
+        content["error_id"] = error_id
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
-    logger.exception("Unhandled error on %s: %s", request.url.path, exc)
+    error_id = uuid4().hex[:12]
+    logger.exception("Unhandled error id=%s path=%s err=%s", error_id, request.url.path, exc)
     return JSONResponse(
         status_code=500,
-        content={"error": "服务器内部错误", "detail": str(exc)},
+        content={"error": "服务器内部错误", "error_id": error_id},
     )
 
 
 app.include_router(auth.router, prefix="/api/auth", tags=["用户认证"])
+app.include_router(accounts.router, prefix="/api/accounts", tags=["账户管理"])
 app.include_router(materials.router, prefix="/api/materials", tags=["素材管理"])
 app.include_router(chat.router, prefix="/api/chat", tags=["写作对话"])
 app.include_router(documents.router, prefix="/api/documents", tags=["文档管理"])

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -11,12 +11,14 @@ from app.timezone import to_shanghai_iso
 
 
 class DraftService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, *, account_id: int = 1):
         self.db = db
+        self.account_id = int(account_id or 1)
         self.parser = EditorDocParser()
 
     def validate_session_owner(self, user_id: int, session_id: int) -> ChatSession:
         session = self.db.query(ChatSession).filter(
+            ChatSession.account_id == self.account_id,
             ChatSession.id == session_id,
             ChatSession.user_id == user_id,
         ).first()
@@ -28,6 +30,7 @@ class DraftService:
         session = self.validate_session_owner(user_id=user_id, session_id=session_id)
 
         row = self.db.query(SessionDraft).filter(
+            SessionDraft.account_id == self.account_id,
             SessionDraft.session_id == session_id,
             SessionDraft.user_id == user_id,
         ).first()
@@ -61,12 +64,14 @@ class DraftService:
         content_text = self.parser.draft_to_plain_text(normalized)
 
         row = self.db.query(SessionDraft).filter(
+            SessionDraft.account_id == self.account_id,
             SessionDraft.session_id == session_id,
             SessionDraft.user_id == user_id,
         ).first()
 
         if not row:
             row = SessionDraft(
+                account_id=self.account_id,
                 session_id=session_id,
                 user_id=user_id,
                 draft_json=normalized,

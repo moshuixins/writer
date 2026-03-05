@@ -1,17 +1,21 @@
+﻿from __future__ import annotations
+
 import os
 import re
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
-from sqlalchemy.orm import Session
-from docx import Document as DocxDocument
-from PyPDF2 import PdfReader
+
 import jieba
 import jieba.analyse
+from PyPDF2 import PdfReader
+from docx import Document as DocxDocument
+from sqlalchemy.orm import Session
+
 from app.config import get_settings
-from app.models.material import Material
 from app.errors import FileValidationError, logger
+from app.models.material import Material
 
 settings = get_settings()
 
@@ -19,45 +23,43 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 class MaterialService:
-    """素材处理服务：上传、解析、分类、摘要"""
+    """Material upload/parse/persist service."""
 
     def __init__(self, db: Session):
         self.db = db
 
     def save_upload(self, file_bytes: bytes, filename: str, user_id: int) -> str:
-        """保存上传文件到磁盘，返回存储路径"""
         if len(file_bytes) > MAX_FILE_SIZE:
-            raise FileValidationError(f"文件大小超过限制（最大{MAX_FILE_SIZE // 1024 // 1024}MB）")
+            raise FileValidationError(f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）")
         ext = Path(filename).suffix.lower()
         if ext not in {".doc", ".docx", ".pdf", ".txt"}:
             raise FileValidationError(f"不支持的文件格式: {ext}")
+
         unique_name = f"{uuid.uuid4().hex}{ext}"
         upload_dir = Path(settings.upload_dir)
         upload_dir.mkdir(parents=True, exist_ok=True)
         file_path = upload_dir / unique_name
         file_path.write_bytes(file_bytes)
-        logger.info("File saved: %s (%d bytes)", file_path, len(file_bytes))
+        logger.info("File saved: %s (%d bytes) user_id=%s", file_path, len(file_bytes), user_id)
         return str(file_path)
 
     def extract_text(self, file_path: str, filename: str) -> str:
-        """从文件中提取纯文本"""
         ext = Path(filename).suffix.lower()
         try:
             if ext == ".doc":
                 return self._extract_doc(file_path)
-            elif ext == ".docx":
+            if ext == ".docx":
                 return self._extract_docx(file_path)
-            elif ext == ".pdf":
+            if ext == ".pdf":
                 return self._extract_pdf(file_path)
-            elif ext == ".txt":
+            if ext == ".txt":
                 return self._extract_txt(file_path)
-            else:
-                raise FileValidationError(f"不支持的文件格式: {ext}")
+            raise FileValidationError(f"不支持的文件格式: {ext}")
         except FileValidationError:
             raise
         except Exception as e:
             logger.error("Text extraction failed for %s: %s", filename, e)
-            raise FileValidationError(f"文件解析失败: {e}")
+            raise FileValidationError("文件解析失败")
 
     def _extract_docx(self, file_path: str) -> str:
         doc = DocxDocument(file_path)
@@ -65,7 +67,6 @@ class MaterialService:
         return "\n".join(paragraphs)
 
     def _extract_doc(self, file_path: str) -> str:
-        """提取 legacy .doc 文本：优先调用系统 antiword/catdoc。"""
         for tool in ("antiword", "catdoc", "wvText"):
             tool_path = shutil.which(tool)
             if not tool_path:
@@ -80,7 +81,7 @@ class MaterialService:
                     check=False,
                 )
             except Exception as e:
-                logger.warning("%s failed for %s: %s", tool, file_path, e)
+                logger.warning("%s failed for file: %s", tool, e)
                 continue
 
             raw = result.stdout or b""
@@ -97,7 +98,7 @@ class MaterialService:
                 return text
 
             stderr_preview = (result.stderr or b"").decode("utf-8", errors="ignore")[:200]
-            logger.warning("%s extracted empty text for %s: %s", tool, file_path, stderr_preview)
+            logger.warning("%s extracted empty text: %s", tool, stderr_preview)
 
         raise FileValidationError("DOC 文件解析失败：服务器缺少 antiword/catdoc，或文件内容不可读取")
 
@@ -105,7 +106,8 @@ class MaterialService:
         try:
             reader = PdfReader(file_path)
         except Exception as e:
-            raise FileValidationError(f"PDF文件损坏或加密: {e}")
+            raise FileValidationError("PDF 文件损坏或加密") from e
+
         texts = []
         for page in reader.pages:
             try:
@@ -113,11 +115,10 @@ class MaterialService:
                 if text:
                     texts.append(text.strip())
             except Exception:
-                logger.warning("Failed to extract page from %s", file_path)
+                logger.warning("Failed to extract one PDF page")
         return "\n".join(texts)
 
     def _extract_txt(self, file_path: str) -> str:
-        """读取txt文件，自动检测编码"""
         raw = Path(file_path).read_bytes()
         for encoding in ("utf-8", "gbk", "gb2312", "utf-16", "latin-1"):
             try:
@@ -127,24 +128,28 @@ class MaterialService:
         raise FileValidationError("无法识别文件编码")
 
     def extract_keywords(self, text: str, top_k: int = 10) -> list[str]:
-        """使用jieba提取关键词"""
-        return jieba.analyse.extract_tags(text, topK=top_k)
+        return jieba.analyse.extract_tags(text or "", topK=top_k)
 
     def guess_title(self, text: str, filename: str) -> str:
-        """从文本首行或文件名猜测标题"""
-        first_line = text.strip().split("\n")[0].strip()
-        if len(first_line) > 5 and len(first_line) < 100:
+        first_line = text.strip().split("\n")[0].strip() if text else ""
+        if 5 < len(first_line) < 100:
             return first_line
         return Path(filename).stem
 
     def create_material(
-        self, user_id: int, title: str, filename: str,
-        file_path: str, content_text: str,
-        doc_type: str = None, summary: str = None,
-        keywords: list[str] = None,
+        self,
+        user_id: int,
+        title: str,
+        filename: str,
+        file_path: str,
+        content_text: str,
+        doc_type: str | None = None,
+        summary: str | None = None,
+        keywords: list[str] | None = None,
+        account_id: int = 1,
     ) -> Material:
-        """创建素材记录"""
         material = Material(
+            account_id=account_id,
             user_id=user_id,
             title=title,
             original_filename=filename,
@@ -161,16 +166,13 @@ class MaterialService:
         return material
 
     def calculate_char_count(self, text: str) -> int:
-        """统计“字数”：去除空白字符（空格/换行/制表/全角空格）后的字符数。"""
         if not text:
             return 0
         normalized = text.replace("\ufeff", "")
-        # 去除空白 + 常见不可见控制字符，避免“看不见字符”造成字数偏差。
         normalized = re.sub(r"[\s\u00a0\u3000\u200b-\u200f\u2060\u2066-\u2069\ufeff]+", "", normalized)
         return len(normalized)
 
     def normalize_material_char_count(self, material: Material) -> int:
-        """返回规范字数；若数据库中的 char_count 不一致则自动修正。"""
         expected = self.calculate_char_count(material.content_text or "")
         if material.char_count != expected:
             material.char_count = expected
@@ -187,24 +189,38 @@ class MaterialService:
             self.db.commit()
 
     def get_materials(
-        self, user_id: int, doc_type: str = None,
-        keyword: str = None, skip: int = 0, limit: int = 20,
+        self,
+        user_id: int,
+        account_id: int,
+        doc_type: str | None = None,
+        keyword: str | None = None,
+        skip: int = 0,
+        limit: int = 20,
     ) -> list[Material]:
-        """查询素材列表"""
-        q = self._build_query(user_id=user_id, doc_type=doc_type, keyword=keyword)
+        q = self._build_query(user_id=user_id, account_id=account_id, doc_type=doc_type, keyword=keyword)
         return q.order_by(Material.created_at.desc()).offset(skip).limit(limit).all()
 
     def count_materials(
-        self, user_id: int, doc_type: str = None, keyword: str = None,
+        self,
+        user_id: int,
+        account_id: int,
+        doc_type: str | None = None,
+        keyword: str | None = None,
     ) -> int:
-        """统计素材总数（用于分页）"""
-        return self._build_query(user_id=user_id, doc_type=doc_type, keyword=keyword).count()
+        return self._build_query(user_id=user_id, account_id=account_id, doc_type=doc_type, keyword=keyword).count()
 
-    def get_material(self, material_id: int) -> Material | None:
-        return self.db.query(Material).filter(Material.id == material_id).first()
+    def get_material(self, material_id: int, *, account_id: int) -> Material | None:
+        return (
+            self.db.query(Material)
+            .filter(
+                Material.id == material_id,
+                Material.account_id == account_id,
+            )
+            .first()
+        )
 
-    def delete_material(self, material_id: int) -> bool:
-        material = self.get_material(material_id)
+    def delete_material(self, material_id: int, *, account_id: int) -> bool:
+        material = self.get_material(material_id, account_id=account_id)
         if not material:
             return False
         if material.file_path and os.path.exists(material.file_path):
@@ -212,10 +228,18 @@ class MaterialService:
         self.db.delete(material)
         self.db.commit()
         return True
+
     def _build_query(
-        self, user_id: int, doc_type: str = None, keyword: str = None,
+        self,
+        user_id: int,
+        account_id: int,
+        doc_type: str | None = None,
+        keyword: str | None = None,
     ):
-        q = self.db.query(Material).filter(Material.user_id == user_id)
+        q = self.db.query(Material).filter(
+            Material.user_id == user_id,
+            Material.account_id == account_id,
+        )
         if doc_type:
             q = q.filter(Material.doc_type == doc_type)
         if keyword:

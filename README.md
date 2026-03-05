@@ -37,14 +37,16 @@ writer/
 │       │   └── writer/
 │       │       ├── WritingChat.vue       # 写作对话页（SSE 打字机效果）
 │       │       ├── MaterialManager.vue   # 素材管理页
+│       │       ├── BookLearning.vue      # 书籍学习页（扫描/导入/任务进度）
 │       │       ├── ExportHistory.vue     # 导出历史页
 │       │       └── Settings.vue          # 偏好设置页
-│       ├── api/modules/          # API 模块（chat/materials/documents/preferences）
+│       ├── api/modules/          # API 模块（chat/materials/books/documents/preferences）
 │       ├── types/writer.ts       # 业务类型定义
 │       ├── utils/constants.ts    # 公文类型常量
 │       └── store/modules/user.ts # 认证状态管理
 └── data/
     ├── openviking/ov.conf        # OpenViking 配置
+    ├── book/                     # 书籍目录（EPUB/PDF）
     ├── uploads/                  # 上传文件存储
     └── exports/                  # 导出文件存储
 ```
@@ -110,6 +112,14 @@ writer/
 - 分析上传素材的写作风格特征（用词、句式、结构）
 - 按公文类型积累风格指南
 - 生成时自动应用对应类型的风格规范
+
+### 书籍学习（新增）
+- 扫描 `data/book` 下的 `.epub/.pdf`
+- PDF 优先文本层提取，扫描版自动 OCR（Tesseract）
+- 书籍分片写入 OpenViking `viking://resources/books/*`
+- 提炼并持久化 `book_sources`、`book_style_rules`
+- 写作流式步骤新增：`检索书籍知识`、`融合书籍风格规则`
+- 仅提炼写法，不直引原文（生成端禁止连续 20 字以上复用）
 
 ### 文档导出
 - 生成符合 GB/T 9704-2012 标准的 docx 文件
@@ -213,6 +223,10 @@ pnpm dev
 | DELETE | `/{id}` | 删除素材 |
 | POST | `/batch-delete` | 批量删除素材 |
 | POST | `/batch-classify` | 批量重新分类 |
+| GET | `/books/scan` | 扫描书籍目录，返回已导入状态 |
+| POST | `/books/import` | 启动书籍学习任务（支持 `rebuild`） |
+| GET | `/books/tasks/{task_id}` | 查询书籍学习任务进度 |
+| GET | `/books/sources` | 查询书籍导入历史记录 |
 
 ### 文档管理 `/api/documents`（需认证）
 
@@ -243,3 +257,14 @@ pnpm dev
 - 公文分类/摘要、风格学习、docx 生成、显式偏好
 
 **优雅降级：** OpenViking 未启动时系统正常运行，语义检索和隐式记忆功能不可用，写作生成使用"暂无参考范文"兜底。
+
+## 书籍学习 CLI
+
+```bash
+cd backend
+python -m app.jobs.import_books --dir ../data/book --rebuild
+```
+
+可选参数：
+- `--selected-file <文件名或相对路径>`（可重复传入）
+- `--rebuild`（清空书籍知识后全量重建）

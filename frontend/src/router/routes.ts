@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 import generatedRoutes from 'virtual:generated-pages'
 import { setupLayouts } from 'virtual:meta-layouts'
 import Writer from './modules/writer'
+import Admin from './modules/admin'
 
 // 固定路由（默认路由）
 const constantRoutes: RouteRecordRaw[] = [
@@ -65,6 +66,15 @@ const asyncRoutes: Route.recordMainRaw[] = [
     },
     children: [
       Writer,
+    ],
+  },
+  {
+    meta: {
+      title: 'Admin',
+      icon: 'i-ep:setting',
+    },
+    children: [
+      Admin,
     ],
   },
 ]

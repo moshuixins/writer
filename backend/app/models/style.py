@@ -10,10 +10,12 @@ def _utcnow():
 class WritingHabit(Base):
     __tablename__ = "writing_habits"
     __table_args__ = (
+        Index("ix_habits_account_type", "account_id", "habit_type"),
         Index("ix_habits_user_type", "user_id", "habit_type"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, default=1, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     habit_type = Column(String(50), nullable=False)
     doc_type = Column(String(50))
@@ -26,11 +28,13 @@ class WritingHabit(Base):
 class StyleProfile(Base):
     __tablename__ = "style_profiles"
     __table_args__ = (
-        UniqueConstraint("doc_type", "feature_name", name="uq_style_doc_feature"),
+        UniqueConstraint("account_id", "doc_type", "feature_name", name="uq_account_style_doc_feature"),
+        Index("ix_style_profiles_account_doctype", "account_id", "doc_type"),
         Index("ix_style_profiles_doctype", "doc_type"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, default=1, index=True)
     doc_type = Column(String(50), nullable=False)
     feature_name = Column(String(100), nullable=False)
     feature_value = Column(JSON, nullable=False)

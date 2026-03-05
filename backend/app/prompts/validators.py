@@ -1,31 +1,57 @@
-"""LLM 返回结果校验工具"""
+"""Validation helpers for LLM outputs and doc types."""
+
+from __future__ import annotations
+
 import json
 import re
 from typing import Any
-from app.errors import logger
 
-VALID_DOC_TYPES = {
-    "通知", "报告", "请示", "批复", "函",
-    "纪要", "方案", "总结", "讲话稿", "其他",
-}
+from app.errors import logger
+from app.prompts.doc_types_catalog import (
+    CANONICAL_DOC_TYPE_SET,
+    CANONICAL_DOC_TYPES,
+    DOC_TYPE_ALIASES,
+    OTHER_DOC_TYPE,
+    is_canonical_doc_type,
+    normalize_doc_type,
+)
+
+VALID_DOC_TYPES = set(CANONICAL_DOC_TYPES)
+
+
+def ensure_canonical_doc_type(raw: str) -> str:
+    """Validate API input doc_type strictly against canonical values."""
+    cleaned = (raw or "").strip()
+    if cleaned in CANONICAL_DOC_TYPE_SET:
+        return cleaned
+    raise ValueError(f"invalid_doc_type:{raw}")
 
 
 def validate_classify(raw: str) -> str:
-    """校验分类结果，不合法则返回'其他'"""
-    cleaned = raw.strip().strip("\"'。.，,")
-    if cleaned in VALID_DOC_TYPES:
-        return cleaned
-    for t in VALID_DOC_TYPES:
-        if t in cleaned:
-            return t
+    """Normalize LLM classification output; fallback to '其他'."""
+    cleaned = (raw or "").strip().strip("\"'“”‘’[]()")
+    if not cleaned:
+        return OTHER_DOC_TYPE
+
+    normalized = normalize_doc_type(cleaned)
+    if normalized:
+        return normalized
+
+    # Fuzzy contains for robust model output parsing.
+    for alias, target in DOC_TYPE_ALIASES.items():
+        if alias and alias in cleaned:
+            return target
+    for doc_type in VALID_DOC_TYPES:
+        if doc_type in cleaned:
+            return doc_type
+
     logger.warning("Invalid classification result: %s", raw)
-    return "其他"
+    return OTHER_DOC_TYPE
 
 
 def parse_json_response(raw: str, silent: bool = False) -> Any | None:
-    """从 LLM 返回中提取 JSON，支持 markdown 代码块"""
-    text = raw.strip()
-    # 尝试提取 ```json ... ``` 代码块
+    """Parse JSON from model output, including fenced markdown."""
+    text = (raw or "").strip()
     match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
     if match:
         text = match.group(1).strip()
@@ -33,12 +59,12 @@ def parse_json_response(raw: str, silent: bool = False) -> Any | None:
         return json.loads(text)
     except json.JSONDecodeError:
         if not silent:
-            logger.warning("Failed to parse JSON from LLM: %s", text[:200])
+            logger.warning("Failed to parse JSON from LLM: %s", text[:300])
         return None
 
 
 def validate_keywords(raw: str, max_keywords: int = 10) -> list[str]:
-    """校验关键词提取结果，兼容 JSON 数组/JSON 对象/分隔字符串。"""
+    """Validate keywords from list/json/string and normalize duplicates."""
     text = (raw or "").strip()
     if not text:
         return []
@@ -55,12 +81,8 @@ def validate_keywords(raw: str, max_keywords: int = 10) -> list[str]:
             values = [maybe]
 
     if not values:
-        normalized = text
-        if normalized.lower().startswith("keywords"):
-            normalized = re.sub(r"^keywords\s*[:：]\s*", "", normalized, flags=re.IGNORECASE)
-        if normalized.startswith("关键词") or normalized.startswith("关键字"):
-            normalized = re.sub(r"^(关键词|关键字)\s*[:：]\s*", "", normalized)
-        values = re.split(r"[，,、;；\n\r\t]+", normalized)
+        normalized = re.sub(r"^(keywords|关键词)\s*[:：]\s*", "", text, flags=re.IGNORECASE)
+        values = re.split(r"[,，;；、\n\r\t]+", normalized)
 
     cleaned: list[str] = []
     seen: set[str] = set()
@@ -68,23 +90,19 @@ def validate_keywords(raw: str, max_keywords: int = 10) -> list[str]:
         if item is None:
             continue
         keyword = str(item).strip().strip("\"'`[]")
-        keyword = re.sub(r"^\d+[\.\)\、]\s*", "", keyword)
-        keyword = re.sub(r"^keywords\s*[:：]\s*", "", keyword, flags=re.IGNORECASE)
-        keyword = re.sub(r"^(关键词|关键字)\s*[:：]\s*", "", keyword)
-        if not keyword:
-            continue
-        if keyword in seen:
+        keyword = re.sub(r"^\d+[\.\)．、\s]*", "", keyword)
+        keyword = re.sub(r"^(keywords|关键词)\s*[:：]\s*", "", keyword, flags=re.IGNORECASE)
+        if not keyword or keyword in seen:
             continue
         seen.add(keyword)
         cleaned.append(keyword)
         if len(cleaned) >= max_keywords:
             break
-
     return cleaned
 
 
 def validate_title(raw: str, fallback: str = "", max_len: int = 100) -> str:
-    """校验标题提取结果，失败时回退到 fallback。"""
+    """Validate title from model output."""
     text = (raw or "").strip()
     if not text:
         return (fallback or "").strip()
@@ -95,27 +113,25 @@ def validate_title(raw: str, fallback: str = "", max_len: int = 100) -> str:
 
     title = lines[0]
     title = re.sub(r"^(标题|题目)\s*[:：]\s*", "", title)
-    title = title.strip().strip("\"'“”‘’[]【】")
+    title = title.strip().strip("\"'“”‘’【】[]")
     title = re.sub(r"\s+", " ", title)
 
-    if not title or title in {"无", "无标题", "未提供标题", "N/A", "NA"}:
+    invalid_titles = {"无", "无标题", "未提供标题", "N/A", "NA"}
+    if not title or title in invalid_titles:
         return (fallback or "").strip()
 
     if len(title) > max_len:
-        title = title[:max_len].rstrip("，。；：,.!?！？")
-
+        title = title[:max_len].rstrip("，。；,.!?！？")
     return title or (fallback or "").strip()
 
 
-def validate_writing_json(raw: str) -> dict:
-    """校验写作生成的 JSON 结构，返回合法 dict 或兜底结构"""
+def validate_writing_json(raw: str) -> dict[str, Any]:
+    """Validate writing JSON output with fallback wrapper."""
     data = parse_json_response(raw)
     if data and isinstance(data, dict):
-        # 确保 body_sections 是 list
         if "body_sections" in data and not isinstance(data["body_sections"], list):
             data["body_sections"] = []
         return data
-    # 兜底：把原始文本包装成结构化格式
     return {
         "title": "",
         "recipients": "",
@@ -125,9 +141,24 @@ def validate_writing_json(raw: str) -> dict:
     }
 
 
-def validate_style_json(raw: str) -> dict:
-    """校验风格分析 JSON，失败返回 raw_analysis"""
+def validate_style_json(raw: str) -> dict[str, Any]:
+    """Validate style analysis JSON; keep raw text on failure."""
     data = parse_json_response(raw)
     if data and isinstance(data, dict):
         return data
     return {"raw_analysis": raw}
+
+
+__all__ = [
+    "VALID_DOC_TYPES",
+    "ensure_canonical_doc_type",
+    "is_canonical_doc_type",
+    "normalize_doc_type",
+    "validate_classify",
+    "parse_json_response",
+    "validate_keywords",
+    "validate_title",
+    "validate_writing_json",
+    "validate_style_json",
+]
+

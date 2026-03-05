@@ -25,7 +25,13 @@
 
     <div class="filters">
       <el-select v-model="filters.docType" placeholder="公文类型" clearable @change="resetAndLoad">
-        <el-option v-for="t in DOC_TYPES" :key="t" :label="t" :value="t" />
+        <el-option-group
+          v-for="group in DOC_TYPE_GROUPS"
+          :key="group.id"
+          :label="group.label"
+        >
+          <el-option v-for="t in group.options" :key="t" :label="t" :value="t" />
+        </el-option-group>
       </el-select>
       <el-input
         v-model="filters.keyword"
@@ -41,7 +47,13 @@
       <span>已选 {{ selectedIds.length }} 项</span>
       <el-button size="small" type="danger" @click="batchDelete">批量删除</el-button>
       <el-select v-model="batchDocType" placeholder="批量分类" size="small" class="batch-type-select">
-        <el-option v-for="t in DOC_TYPES" :key="t" :label="t" :value="t" />
+        <el-option-group
+          v-for="group in DOC_TYPE_GROUPS"
+          :key="group.id"
+          :label="group.label"
+        >
+          <el-option v-for="t in group.options" :key="t" :label="t" :value="t" />
+        </el-option-group>
       </el-select>
       <el-button size="small" @click="batchClassify" :disabled="!batchDocType">应用分类</el-button>
     </div>
@@ -116,7 +128,7 @@ import apiMaterials from '@/api/modules/materials'
 import { useUserStore } from '@/store/modules/user'
 import type { Material, MaterialListParams } from '@/types/writer'
 import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
-import { DOC_TYPES } from '@/utils/constants'
+import { DOC_TYPE_GROUPS } from '@/utils/constants'
 
 const userStore = useUserStore()
 

@@ -183,7 +183,13 @@
         </el-form-item>
         <el-form-item label="公文类型">
           <el-select v-model="newDocType" placeholder="请选择公文类型" style="width: 100%">
-            <el-option v-for="t in DOC_TYPES" :key="t" :label="t" :value="t" />
+            <el-option-group
+              v-for="group in DOC_TYPE_GROUPS"
+              :key="group.id"
+              :label="group.label"
+            >
+              <el-option v-for="t in group.options" :key="t" :label="t" :value="t" />
+            </el-option-group>
           </el-select>
         </el-form-item>
       </el-form>
@@ -219,7 +225,7 @@ import apiDocuments from '@/api/modules/documents'
 import { useUserStore } from '@/store/modules/user'
 import type { ChatMessage, ChatSession, ChatWorkflowStep, WriterDraft } from '@/types/writer'
 import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
-import { DOC_TYPES } from '@/utils/constants'
+import { DOC_TYPE_GROUPS } from '@/utils/constants'
 import OfficialDocEditor from './components/OfficialDocEditor.vue'
 
 interface OfficialEditorExpose {
@@ -799,7 +805,7 @@ async function exportDoc() {
     const blobUrl = URL.createObjectURL(resp.data)
     const a = window.document.createElement('a')
     a.href = blobUrl
-    const exportTitle = extractH1TitleFromBody(draft.value.body_json) || draft.value.title || '公文'
+    const exportTitle = extractH1TitleFromBody(draft.value.body_json) || draft.value.title || '文稿'
     a.download = `${exportTitle}.docx`
     a.click()
     URL.revokeObjectURL(blobUrl)

@@ -10,10 +10,12 @@ def _utcnow():
 class GeneratedDocument(Base):
     __tablename__ = "generated_documents"
     __table_args__ = (
+        Index("ix_gendocs_account_created", "account_id", "created_at"),
         Index("ix_gendocs_user_created", "user_id", "created_at"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, default=1, index=True)
     session_id = Column(Integer, ForeignKey("chat_sessions.id"), index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String(500))

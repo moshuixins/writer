@@ -1,6 +1,11 @@
+﻿from __future__ import annotations
+
+import asyncio
 import time
 from typing import Generator
+
 from langchain_openai import ChatOpenAI
+
 from app.config import get_settings
 from app.errors import LLMError, logger
 
@@ -11,7 +16,7 @@ RETRY_DELAY = 1.0
 
 
 class LLMService:
-    """LLM调用封装，含错误处理和重试"""
+    """LLM 调用封装，包含重试和统一异常。"""
 
     def __init__(self, temperature: float = 0.3):
         self.llm = ChatOpenAI(
@@ -24,16 +29,15 @@ class LLMService:
         )
 
     def invoke(self, prompt: str) -> str:
-        """调用LLM并返回文本结果，含重试和错误处理"""
         last_error = None
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = self.llm.invoke(prompt)
                 content = response.content
-                if not content or not content.strip():
+                if not content or not str(content).strip():
                     logger.warning("LLM returned empty response, attempt %d", attempt + 1)
-                    raise LLMError(detail="LLM返回了空内容")
-                return content
+                    raise LLMError(detail="LLM returned empty content")
+                return str(content)
             except LLMError:
                 raise
             except Exception as e:
@@ -45,12 +49,14 @@ class LLMService:
         logger.error("LLM call exhausted all retries: %s", last_error)
         raise LLMError(detail=str(last_error))
 
+    async def invoke_async(self, prompt: str) -> str:
+        return await asyncio.to_thread(self.invoke, prompt)
+
     def stream(self, prompt: str) -> Generator[str, None, None]:
-        """流式调用LLM，逐块yield文本"""
         try:
             for chunk in self.llm.stream(prompt):
                 if chunk.content:
-                    yield chunk.content
+                    yield str(chunk.content)
         except Exception as e:
             logger.error("LLM stream error: %s", e)
             raise LLMError(detail=str(e))

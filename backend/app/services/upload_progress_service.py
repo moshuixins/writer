@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import threading
 import time
@@ -27,6 +27,7 @@ class UploadProgressTracker:
         self,
         task_id: str,
         *,
+        account_id: int = 1,
         parse_progress: int | None = None,
         status: str | None = None,
         stage: str | None = None,
@@ -35,14 +36,21 @@ class UploadProgressTracker:
         now = self._now()
         with self._lock:
             self._prune_locked(now)
-            task = self._tasks.get(task_id, {
-                "task_id": task_id,
-                "status": "pending",
-                "stage": "等待解析",
-                "message": "",
-                "parse_progress": 0,
-                "updated_ts": now,
-            })
+            task = self._tasks.get(
+                task_id,
+                {
+                    "task_id": task_id,
+                    "account_id": int(account_id or 1),
+                    "status": "pending",
+                    "stage": "等待解析",
+                    "message": "",
+                    "parse_progress": 0,
+                    "updated_ts": now,
+                },
+            )
+
+            if "account_id" not in task:
+                task["account_id"] = int(account_id or 1)
             if parse_progress is not None:
                 task["parse_progress"] = max(0, min(100, int(parse_progress)))
             if status is not None:
@@ -84,6 +92,7 @@ class UploadProgressTracker:
     def _format(self, task: dict[str, Any]) -> dict[str, Any]:
         return {
             "task_id": task["task_id"],
+            "account_id": task.get("account_id", 1),
             "status": task["status"],
             "stage": task["stage"],
             "message": task.get("message", ""),

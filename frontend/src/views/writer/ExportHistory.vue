@@ -18,7 +18,7 @@
       <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
       <el-table-column prop="doc_type" label="类型" width="120">
         <template #default="{ row }">
-          <el-tag size="small" type="info">{{ row.doc_type || '公文' }}</el-tag>
+          <el-tag size="small" type="info">{{ row.doc_type || '其他' }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="version" label="版本" width="90" align="center" />
@@ -85,7 +85,7 @@ async function download(row: ExportDoc) {
     const url = URL.createObjectURL(resp.data)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${row.title || '公文'}.docx`
+    a.download = `${row.title || '文稿'}.docx`
     a.click()
     URL.revokeObjectURL(url)
   } catch {

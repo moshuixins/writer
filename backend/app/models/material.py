@@ -10,11 +10,13 @@ def _utcnow():
 class Material(Base):
     __tablename__ = "materials"
     __table_args__ = (
+        Index("ix_materials_account_created", "account_id", "created_at"),
         Index("ix_materials_user_doctype", "user_id", "doc_type"),
         Index("ix_materials_user_created", "user_id", "created_at"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, default=1, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String(500), nullable=False)
     original_filename = Column(String(500))

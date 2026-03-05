@@ -1,12 +1,9 @@
-import axios from 'axios'
-// import qs from 'qs'
+﻿import axios from 'axios'
 import { toast } from 'vue-sonner'
 
-// 请求重试配置
-const MAX_RETRY_COUNT = 3 // 最大重试次数
-const RETRY_DELAY = 1000 // 重试延迟时间（毫秒）
+const MAX_RETRY_COUNT = 3
+const RETRY_DELAY = 1000
 
-// 扩展 AxiosRequestConfig 类型
 declare module 'axios' {
   export interface AxiosRequestConfig {
     retry?: boolean
@@ -21,75 +18,64 @@ const api = axios.create({
   responseType: 'json',
 })
 
-api.interceptors.request.use(
-  (request) => {
-    // 全局拦截请求发送前提交的参数
-    const userStore = useUserStore()
-    // 设置请求头
-    if (request.headers) {
-      if (userStore.isLogin) {
-        request.headers.Authorization = `Bearer ${userStore.token}`
-      }
-    }
-    // 是否将 POST 请求参数进行字符串化处理
-    if (request.method === 'post') {
-      // request.data = qs.stringify(request.data, {
-      //   arrayFormat: 'brackets',
-      // })
-    }
-    return request
-  },
-)
+api.interceptors.request.use((request) => {
+  const userStore = useUserStore()
+  if (request.headers && userStore.isLogin) {
+    request.headers.Authorization = `Bearer ${userStore.token}`
+  }
+  return request
+})
 
-// 处理错误信息的函数
+function buildErrorMessage(error: any): string {
+  const status = error.response?.status ?? error.status
+  const payload = error.response?.data || {}
+  const backendMessage = payload?.error || payload?.detail || ''
+  const errorId = payload?.error_id
+
+  if (status >= 500) {
+    return errorId ? `服务器异常，请稍后重试（错误ID: ${errorId}）` : '服务器异常，请稍后重试'
+  }
+
+  if (backendMessage) {
+    return String(backendMessage)
+  }
+
+  const fallback = String(error.message || '')
+  if (fallback === 'Network Error') return '后端网络故障'
+  if (fallback.toLowerCase().includes('timeout')) return '接口请求超时'
+  return '请求失败，请稍后重试'
+}
+
 function handleError(error: any) {
   const status = error.response?.status ?? error.status
   const url = error.config?.url || ''
   const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register')
 
   if (status === 401 && !isAuthEndpoint) {
-    // token 过期，跳转登录页（登录/注册接口的 401 不触发登出）
     useUserStore().requestLogout()
-  }
-  else if (!error.config?.skipErrorToast) {
-    // 优先使用后端返回的 detail 信息
-    let message = error.response?.data?.detail || error.message
-    if (message === 'Network Error') {
-      message = '后端网络故障'
-    }
-    else if (message.includes?.('timeout')) {
-      message = '接口请求超时'
-    }
+  } else if (!error.config?.skipErrorToast) {
     toast.error('请求失败', {
-      description: message,
+      description: buildErrorMessage(error),
     })
   }
   return Promise.reject(error)
 }
 
 api.interceptors.response.use(
-  (response) => {
-    // writer 后端使用标准 HTTP 状态码，直接透传响应
-    return Promise.resolve(response)
-  },
+  response => Promise.resolve(response),
   async (error) => {
-    // 获取请求配置
     const config = error.config
-    // 如果配置不存在或未启用重试，则直接处理错误
     if (!config || !config.retry) {
       return handleError(error)
     }
-    // 设置重试次数
+
     config.retryCount = config.retryCount || 0
-    // 判断是否超过重试次数
     if (config.retryCount >= MAX_RETRY_COUNT) {
       return handleError(error)
     }
-    // 重试次数自增
+
     config.retryCount += 1
-    // 延迟重试
     await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
-    // 重新发起请求
     return api(config)
   },
 )
