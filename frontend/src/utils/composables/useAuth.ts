@@ -1,28 +1,14 @@
-export default function useAuth() {
-  function hasPermission(permission: string) {
-    const settingsStore = useSettingsStore()
-    const userStore = useUserStore()
-    if (settingsStore.settings.app.enablePermission) {
-      return userStore.permissions.includes(permission)
-    }
-    else {
-      return true
-    }
-  }
+import { hasAllPermissions, hasAnyPermission } from '@/utils/permission'
 
+export default function useAuth() {
   function auth(value: string | string[]) {
-    let auth
-    if (typeof value === 'string') {
-      auth = value !== '' ? hasPermission(value) : true
-    }
-    else {
-      auth = value.length > 0 ? value.some(item => hasPermission(item)) : true
-    }
-    return auth
+    const userStore = useUserStore()
+    return hasAnyPermission(userStore.permissions, value)
   }
 
   function authAll(value: string[]) {
-    return value.length > 0 ? value.every(item => hasPermission(item)) : true
+    const userStore = useUserStore()
+    return hasAllPermissions(userStore.permissions, value)
   }
 
   return {

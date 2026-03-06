@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import hashlib
@@ -154,7 +154,7 @@ class BookImportService:
                 item["imported"] = existing.status in {"completed", "partial"}
                 item["status"] = existing.status
                 item["doc_type"] = existing.doc_type
-                item["updated_at"] = existing.updated_at.isoformat() if existing.updated_at else None
+                item["updated_at"] = existing.updated_at
                 item["source_id"] = existing.id
             else:
                 item["imported"] = False

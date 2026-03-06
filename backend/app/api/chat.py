@@ -1,7 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
-import json
 import threading
 import uuid
 from pathlib import Path
@@ -18,10 +17,20 @@ from app.errors import logger
 from app.models.user import User
 from app.prompts.doc_types_catalog import OTHER_DOC_TYPE
 from app.prompts.validators import ensure_canonical_doc_type
+from app.serializers import (
+    serialize_chat_chunk_sse,
+    serialize_chat_done_sse,
+    serialize_chat_error_sse,
+    serialize_chat_message,
+    serialize_chat_reply,
+    serialize_chat_session,
+    serialize_chat_workflow_sse,
+    serialize_draft_response,
+    serialize_message_response,
+)
 from app.services.context_bridge import ContextBridge
 from app.services.draft_service import DraftService
 from app.services.writing_service import WritingService
-from app.timezone import to_shanghai_iso
 
 router = APIRouter()
 ctx_bridge = ContextBridge()
@@ -120,11 +129,7 @@ async def create_session(
     except Exception:
         pass
 
-    return {
-        "id": session.id,
-        "title": session.title,
-        "doc_type": session.doc_type,
-    }
+    return serialize_chat_session(session, include_status=False, include_created_at=False)
 
 
 @router.put("/sessions/{session_id}")
@@ -151,13 +156,7 @@ def update_session(
     session.title = title
     db.commit()
     db.refresh(session)
-    return {
-        "id": session.id,
-        "title": session.title,
-        "doc_type": session.doc_type,
-        "status": session.status,
-        "created_at": to_shanghai_iso(session.created_at),
-    }
+    return serialize_chat_session(session)
 
 
 @router.get("/sessions")
@@ -167,16 +166,7 @@ def list_sessions(
 ):
     svc = WritingService(db, account_id=current_user.account_id)
     sessions = svc.get_sessions(user_id=current_user.id)
-    return [
-        {
-            "id": s.id,
-            "title": s.title,
-            "doc_type": s.doc_type,
-            "status": s.status,
-            "created_at": to_shanghai_iso(s.created_at),
-        }
-        for s in sessions
-    ]
+    return [serialize_chat_session(session) for session in sessions]
 
 
 @router.get("/sessions/{session_id}/messages")
@@ -197,15 +187,7 @@ def get_messages(
 
     svc = WritingService(db, account_id=current_user.account_id)
     msgs = svc.get_session_messages(session_id)
-    return [
-        {
-            "id": m.id,
-            "role": m.role,
-            "content": m.content,
-            "created_at": to_shanghai_iso(m.created_at),
-        }
-        for m in msgs
-    ]
+    return [serialize_chat_message(message) for message in msgs]
 
 
 @router.get("/sessions/{session_id}/draft")
@@ -236,13 +218,13 @@ def save_session_draft(
         draft=req.draft.model_dump(),
         save_mode=req.save_mode,
     )
-    return {
-        "exists": True,
-        "session_id": session_id,
-        "updated_at": to_shanghai_iso(row.updated_at),
-        "save_mode": req.save_mode,
-        "draft": normalized_draft,
-    }
+    return serialize_draft_response(
+        session_id=session_id,
+        draft=normalized_draft,
+        exists=True,
+        updated_at=row.updated_at,
+        save_mode=req.save_mode,
+    )
 
 
 @router.post("/send")
@@ -297,7 +279,7 @@ async def send_message(
     except Exception as e:
         logger.warning("Auto memory note skipped: %s", e)
 
-    return {"reply": reply}
+    return serialize_chat_reply(reply)
 
 
 @router.post("/send-stream")
@@ -331,95 +313,74 @@ async def send_message_stream(
     doc_type = session.doc_type or OTHER_DOC_TYPE
 
     async def event_generator():
-        async def emit(event: str, **payload):
-            data = json.dumps({"event": event, **payload}, ensure_ascii=False)
-            yield f"data: {data}\n\n"
-
         full_reply = ""
+        stream_ok = False
         try:
             if is_first:
-                async for item in emit("workflow", step="分析写作需求", status="running"):
-                    yield item
+                yield serialize_chat_workflow_sse("分析写作需求", "running")
                 chunks = svc.guidance_stream(req.message, doc_type)
-                async for item in emit("workflow", step="分析写作需求", status="done"):
-                    yield item
-                async for item in emit("workflow", step="生成写作引导", status="running"):
-                    yield item
+                yield serialize_chat_workflow_sse("分析写作需求", "done")
+                yield serialize_chat_workflow_sse("生成写作引导", "running")
             else:
-                async for item in emit("workflow", step="分析请求意图", status="running"):
-                    yield item
-                async for item in emit("workflow", step="搜索素材", status="running"):
-                    yield item
-                async for item in emit("workflow", step="检索书籍知识", status="running"):
-                    yield item
-                async for item in emit("workflow", step="融合书籍风格规则", status="running"):
-                    yield item
+                yield serialize_chat_workflow_sse("分析请求意图", "running")
+                yield serialize_chat_workflow_sse("搜索素材", "running")
+                yield serialize_chat_workflow_sse("检索书籍知识", "running")
+                yield serialize_chat_workflow_sse("融合书籍风格规则", "running")
 
                 chunks, meta = await svc.generate_stream_with_meta(req.session_id, req.message)
 
-                async for item in emit(
-                    "workflow",
-                    step="搜索素材",
-                    status="done",
+                yield serialize_chat_workflow_sse(
+                    "搜索素材",
+                    "done",
                     detail=f"命中 {meta.get('reference_count', 0)} 条素材",
-                ):
-                    yield item
-                async for item in emit(
-                    "workflow",
-                    step="检索书籍知识",
-                    status="done",
+                )
+                yield serialize_chat_workflow_sse(
+                    "检索书籍知识",
+                    "done",
                     detail=f"命中 {meta.get('book_reference_count', 0)} 条书籍参考",
-                ):
-                    yield item
-                async for item in emit(
-                    "workflow",
-                    step="融合书籍风格规则",
-                    status="done",
+                )
+                yield serialize_chat_workflow_sse(
+                    "融合书籍风格规则",
+                    "done",
                     detail=f"命中 {meta.get('book_rule_count', 0)} 条规则",
-                ):
-                    yield item
-                async for item in emit("workflow", step="分析请求意图", status="done"):
-                    yield item
-                async for item in emit("workflow", step="生成回复", status="running"):
-                    yield item
+                )
+                yield serialize_chat_workflow_sse("分析请求意图", "done")
+                yield serialize_chat_workflow_sse("生成回复", "running")
 
             async for chunk in _iterate_sync_generator(chunks):
                 full_reply += chunk
-                data = json.dumps({"chunk": chunk}, ensure_ascii=False)
-                yield f"data: {data}\n\n"
+                yield serialize_chat_chunk_sse(chunk)
 
             if is_first:
-                async for item in emit("workflow", step="生成写作引导", status="done"):
-                    yield item
+                yield serialize_chat_workflow_sse("生成写作引导", "done")
             else:
-                async for item in emit("workflow", step="生成回复", status="done"):
-                    yield item
+                yield serialize_chat_workflow_sse("生成回复", "done")
+            stream_ok = True
         except Exception as e:
             error_id = _new_error_id()
             logger.exception("Stream error. error_id=%s session=%s err=%s", error_id, req.session_id, e)
-            err = json.dumps({"error": f"流式生成失败（错误ID: {error_id}）"}, ensure_ascii=False)
-            yield f"data: {err}\n\n"
+            yield serialize_chat_error_sse(f"流式生成失败（错误ID: {error_id}）")
 
-        svc.add_message(req.session_id, "assistant", full_reply)
+        if stream_ok and full_reply.strip():
+            svc.add_message(req.session_id, "assistant", full_reply)
 
-        if ov_sid:
+            if ov_sid:
+                try:
+                    await ctx_bridge.add_message(ov_sid, "assistant", full_reply)
+                except Exception:
+                    pass
+
             try:
-                await ctx_bridge.add_message(ov_sid, "assistant", full_reply)
-            except Exception:
-                pass
+                await ctx_bridge.add_memory_note(
+                    account_id=current_user.account_id,
+                    session_id=req.session_id,
+                    user_text=req.message,
+                    assistant_text=full_reply,
+                )
+            except Exception as e:
+                logger.warning("Auto memory note skipped: %s", e)
 
-        try:
-            await ctx_bridge.add_memory_note(
-                account_id=current_user.account_id,
-                session_id=req.session_id,
-                user_text=req.message,
-                assistant_text=full_reply,
-            )
-        except Exception as e:
-            logger.warning("Auto memory note skipped: %s", e)
-
-        yield "data: [DONE]\n\n"
-
+        yield serialize_chat_done_sse()
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -483,7 +444,7 @@ async def delete_session(
         except Exception:
             logger.warning("Failed to cleanup docx file: %s", doc_path)
 
-    return {"message": "会话已删除"}
+    return serialize_message_response("会话已删除")
 
 
 @router.post("/sessions/{session_id}/finish")
@@ -504,42 +465,7 @@ async def finish_session(
 
     session.status = "finished"
     db.commit()
-
-    try:
-        from app.models.chat import ChatMessage
-
-        last_user = (
-            db.query(ChatMessage)
-            .filter(
-                ChatMessage.account_id == current_user.account_id,
-                ChatMessage.session_id == session_id,
-                ChatMessage.role == "user",
-            )
-            .order_by(ChatMessage.created_at.desc())
-            .first()
-        )
-        last_assistant = (
-            db.query(ChatMessage)
-            .filter(
-                ChatMessage.account_id == current_user.account_id,
-                ChatMessage.session_id == session_id,
-                ChatMessage.role == "assistant",
-            )
-            .order_by(ChatMessage.created_at.desc())
-            .first()
-        )
-
-        await ctx_bridge.add_memory_note(
-            account_id=current_user.account_id,
-            session_id=session_id,
-            user_text=(last_user.content if last_user else ""),
-            assistant_text=(last_assistant.content if last_assistant else ""),
-        )
-    except Exception as e:
-        logger.warning("Account memory note skipped: %s", e)
-
-    return {"message": "会话已结束，记忆已提交"}
-
+    return serialize_message_response("会话已结束")
 
 @router.post("/review")
 def review_document(

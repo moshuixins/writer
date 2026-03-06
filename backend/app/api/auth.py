@@ -1,24 +1,32 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
-import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.auth import ROLE_PERMISSIONS, ROLE_WRITER, create_access_token, get_current_user, hash_password, verify_password
+from app.auth import create_access_token, get_current_user, hash_password, verify_password
 from app.database import get_db
 from app.models.account import Account
 from app.models.invite_code import InviteCode
 from app.models.user import User
+from app.rbac import ROLE_WRITER
+from app.serializers import serialize_auth_token_response, serialize_auth_user
+from app.services.rbac_service import RBACService
 
 router = APIRouter()
 
 
 def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def _utc_now_for_invite() -> datetime:
+    # SQLite strips tzinfo for DateTime columns, so invite comparisons use naive UTC.
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class RegisterRequest(BaseModel):
@@ -81,16 +89,12 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(400, "用户名已存在")
 
     code_hash = _hash_code(req.invite_code)
-    invite = db.query(InviteCode).filter(
-        InviteCode.code_hash == code_hash,
-    ).first()
+    now = _utc_now_for_invite()
+    invite = db.query(InviteCode).filter(InviteCode.code_hash == code_hash).first()
     if not invite:
         raise HTTPException(400, "邀请码无效")
 
-    if invite.status != "active":
-        raise HTTPException(400, "邀请码已失效")
-
-    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+    if invite.expires_at and invite.expires_at < now:
         invite.status = "expired"
         db.commit()
         raise HTTPException(400, "邀请码已过期")
@@ -102,33 +106,44 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     if not account:
         raise HTTPException(400, "邀请码所属账户不存在或已禁用")
 
-    user = User(
-        account_id=invite.account_id,
-        username=req.username,
-        password_hash=hash_password(req.password),
-        display_name=req.display_name or req.username,
-        department=req.department,
-    )
-    db.add(user)
-    db.flush()
+    try:
+        reserved = db.query(InviteCode).filter(
+            InviteCode.id == invite.id,
+            InviteCode.status == "active",
+            or_(InviteCode.expires_at.is_(None), InviteCode.expires_at >= now),
+        ).update({"status": "consuming"}, synchronize_session=False)
+        if reserved != 1:
+            db.rollback()
+            raise HTTPException(400, "邀请码已失效")
 
-    invite.status = "used"
-    invite.used_by = user.id
-    invite.used_at = datetime.now(timezone.utc)
-    db.commit()
+        user = User(
+            account_id=invite.account_id,
+            username=req.username,
+            password_hash=hash_password(req.password),
+            display_name=req.display_name or req.username,
+            department=req.department,
+        )
+        db.add(user)
+        db.flush()
+
+        rbac = RBACService(db)
+        rbac.ensure_account_system_roles(int(invite.account_id or 1))
+        rbac.set_user_roles(user, [ROLE_WRITER])
+
+        invite_row = db.query(InviteCode).filter(InviteCode.id == invite.id).first()
+        invite_row.status = "used"
+        invite_row.used_by = user.id
+        invite_row.used_at = now
+        db.commit()
+        db.refresh(user)
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
 
     token = create_access_token(user.id)
-    return {
-        "token": token,
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "display_name": user.display_name,
-            "department": user.department,
-            "role": user.role,
-            "account_id": user.account_id,
-        },
-    }
+    return serialize_auth_token_response(db, user, token)
 
 
 @router.post("/login")
@@ -144,41 +159,20 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(403, "账户已禁用")
 
     token = create_access_token(user.id)
-    return {
-        "token": token,
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "display_name": user.display_name,
-            "department": user.department,
-            "role": user.role,
-            "account_id": user.account_id,
-        },
-    }
+    return serialize_auth_token_response(db, user, token)
 
 
 @router.get("/profile")
-def get_profile(current_user: User = Depends(get_current_user)):
-    return {
-        "id": current_user.id,
-        "username": current_user.username,
-        "display_name": current_user.display_name,
-        "department": current_user.department,
-        "role": current_user.role,
-        "account_id": current_user.account_id,
-    }
+def get_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return serialize_auth_user(db, current_user)
 
 
 @router.get("/permissions")
 def get_permissions(current_user: User = Depends(get_current_user)):
-    role = (current_user.role or ROLE_WRITER).strip() or ROLE_WRITER
-    perms = ROLE_PERMISSIONS.get(role, set())
-    if "*" in perms:
-        explicit = {perm for values in ROLE_PERMISSIONS.values() for perm in values if perm != "*"}
-        permissions = ["*"] + sorted(explicit)
-    else:
-        permissions = sorted(perms)
-    return {"permissions": permissions}
+    return {"permissions": list(getattr(current_user, "_permission_codes", []) or [])}
 
 
 @router.put("/profile")
@@ -195,14 +189,7 @@ def update_profile(
     db.refresh(current_user)
     return {
         "message": "资料已更新",
-        "user": {
-            "id": current_user.id,
-            "username": current_user.username,
-            "display_name": current_user.display_name,
-            "department": current_user.department,
-            "role": current_user.role,
-            "account_id": current_user.account_id,
-        },
+        "user": serialize_auth_user(db, current_user),
     }
 
 

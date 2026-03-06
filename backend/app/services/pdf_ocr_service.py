@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -195,4 +195,4 @@ class PdfOcrService:
             "total_pages": total_pages,
             "text_layer_chars": total_chars,
             "non_empty_ratio": non_empty_ratio,
-        }
+        }

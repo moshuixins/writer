@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime, timezone
 
@@ -27,4 +27,4 @@ class InviteCode(Base):
     used_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=_utcnow)
     used_at = Column(DateTime, nullable=True)
-    expires_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)

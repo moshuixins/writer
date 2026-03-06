@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import threading
 import time
@@ -101,4 +101,4 @@ class UploadProgressTracker:
         }
 
 
-upload_progress_tracker = UploadProgressTracker()
+upload_progress_tracker = UploadProgressTracker()

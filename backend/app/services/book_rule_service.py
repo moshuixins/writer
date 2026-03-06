@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from typing import Iterable
@@ -84,4 +84,4 @@ class BookRuleService:
                 items.append(f"{prefix} {row.rule_text}（来源：{row.origin_ref}）")
             else:
                 items.append(f"{prefix} {row.rule_text}")
-        return items
+        return items

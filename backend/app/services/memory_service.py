@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
@@ -46,4 +46,4 @@ class MemoryService:
         if not prefs:
             return ""
         pref_lines = [f"- {k}: {v}" for k, v in prefs.items()]
-        return "用户偏好：\n" + "\n".join(pref_lines)
+        return "用户偏好：\n" + "\n".join(pref_lines)

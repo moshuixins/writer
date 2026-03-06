@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import re
@@ -174,4 +174,4 @@ class StyleAnalyzer:
                         if line_parts:
                             parts.append(f"- 数据要素：{'；'.join(line_parts)}")
 
-        return "\n".join(parts) if parts else "暂无风格数据"
+        return "\n".join(parts) if parts else "暂无风格数据"

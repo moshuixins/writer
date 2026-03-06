@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import uuid
@@ -338,4 +338,4 @@ class ContextBridge:
             return {}
         if isinstance(data, dict) and "result" in data:
             return data["result"]
-        return data
+        return data

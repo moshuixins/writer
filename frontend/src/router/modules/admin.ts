@@ -9,7 +9,7 @@ const routes: RouteRecordRaw = {
   component: Layout,
   name: 'admin',
   meta: {
-    title: 'Admin',
+    title: '管理后台',
     icon: 'i-ep:setting',
   },
   children: [
@@ -18,7 +18,7 @@ const routes: RouteRecordRaw = {
       name: 'adminOverview',
       component: () => import('@/views/admin/AdminOverview.vue'),
       meta: {
-        title: 'Overview',
+        title: '概览',
         icon: 'i-ep:monitor',
         auth: 'accounts:read',
       },
@@ -28,7 +28,7 @@ const routes: RouteRecordRaw = {
       name: 'adminAccounts',
       component: () => import('@/views/admin/AdminAccounts.vue'),
       meta: {
-        title: 'Accounts',
+        title: '账户管理',
         icon: 'i-ep:office-building',
         auth: 'accounts:read',
       },
@@ -38,7 +38,7 @@ const routes: RouteRecordRaw = {
       name: 'adminRoles',
       component: () => import('@/views/admin/AdminRoles.vue'),
       meta: {
-        title: 'Roles & Permissions',
+        title: '角色与权限',
         icon: 'i-ep:key',
         auth: 'accounts:read',
       },

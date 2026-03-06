@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -13,10 +13,10 @@ from app.models.document import GeneratedDocument
 from app.models.user import User
 from app.prompts.doc_types_catalog import OTHER_DOC_TYPE
 from app.prompts.validators import ensure_canonical_doc_type
+from app.serializers import serialize_collection_response, serialize_generated_document_history_item
 from app.services.docx_generator import DocxGenerator
 from app.services.draft_service import DraftService
 from app.services.editor_doc_parser import EditorDocParser
-from app.timezone import to_shanghai_iso
 
 router = APIRouter()
 
@@ -151,19 +151,8 @@ def list_export_history(
     )
     total = base_query.count()
     docs = base_query.order_by(GeneratedDocument.created_at.desc()).offset(skip).limit(limit).all()
-    return {
-        "items": [
-            {
-                "id": d.id,
-                "title": d.title,
-                "doc_type": d.doc_type,
-                "version": d.version,
-                "created_at": to_shanghai_iso(d.created_at),
-            }
-            for d in docs
-        ],
-        "total": total,
-    }
+    items = [serialize_generated_document_history_item(document) for document in docs]
+    return serialize_collection_response(items, total=total)
 
 
 @router.get("/history/{doc_id}/download")

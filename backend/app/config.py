@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import model_validator
 from functools import lru_cache
@@ -75,4 +75,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings()

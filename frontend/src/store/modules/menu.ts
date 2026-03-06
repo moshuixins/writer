@@ -4,6 +4,7 @@ import { cloneDeep } from 'es-toolkit'
 import apiApp from '@/api/modules/app'
 import menu from '@/menu'
 import { resolveRoutePath } from '@/utils'
+import { filterMenusByAuth } from '@/utils/permission'
 
 export const useMenuStore = defineStore(
   // 唯一ID
@@ -151,21 +152,7 @@ export const useMenuStore = defineStore(
     const auth = useAuth()
     // 根据权限过滤导航
     function filterAsyncMenus<T extends Menu.recordMainRaw[] | Menu.recordRaw[]>(menus: T): T {
-      const res: any = []
-      menus.forEach((menu) => {
-        if (auth.auth(menu.meta?.auth ?? '')) {
-          const tmpMenu = cloneDeep(menu)
-          if (tmpMenu.children && tmpMenu.children.length > 0) {
-            tmpMenu.children = filterAsyncMenus(tmpMenu.children) as Menu.recordRaw[]
-            tmpMenu.children.length > 0 && res.push(tmpMenu)
-          }
-          else {
-            delete tmpMenu.children
-            res.push(tmpMenu)
-          }
-        }
-      })
-      return res
+      return filterMenusByAuth(cloneDeep(menus) as any, auth.auth) as T
     }
     // 生成导航（前端生成）
     async function generateMenusAtFront() {
@@ -215,3 +202,5 @@ export const useMenuStore = defineStore(
     }
   },
 )
+
+

@@ -25,7 +25,7 @@ const loading = ref(false)
 const form = useForm({
   validationSchema: toTypedSchema(
     z.object({
-      invite_code: z.string().min(1, 'Invite code required'),
+      invite_code: z.string().min(1, '请输入邀请码'),
       account: z.string().min(1, '请输入用户名'),
       password: z.string().min(1, '请输入密码').min(6, '密码长度为6到18位').max(18, '密码长度为6到18位'),
       checkPassword: z.string().min(1, '请再次输入密码'),
@@ -83,7 +83,7 @@ const onSubmit = form.handleSubmit(async (values) => {
       <FormField v-slot="{ componentField, errors }" name="invite_code">
         <FormItem class="relative pb-6 space-y-0">
           <FormControl>
-            <FaInput type="text" placeholder="Invite code" class="w-full" :class="errors.length && 'border-destructive'" v-bind="componentField" />
+            <FaInput type="text" placeholder="请输入邀请码" class="w-full" :class="errors.length && 'border-destructive'" v-bind="componentField" />
           </FormControl>
           <Transition enter-active-class="transition-opacity" enter-from-class="opacity-0" leave-active-class="transition-opacity" leave-to-class="opacity-0">
             <FormMessage class="absolute bottom-1 text-xs" />

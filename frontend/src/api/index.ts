@@ -1,4 +1,4 @@
-﻿import axios from 'axios'
+import axios from 'axios'
 import { toast } from 'vue-sonner'
 
 const MAX_RETRY_COUNT = 3
@@ -80,4 +80,4 @@ api.interceptors.response.use(
   },
 )
 
-export default api
+export default api

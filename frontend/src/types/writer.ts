@@ -1,4 +1,4 @@
-﻿// Canonical doc_type follows the 79 subtype catalog + "其他" fallback.
+// Canonical doc_type follows the 79 subtype catalog + "其他" fallback.
 export type DocType = string
 
 export interface ChatSession {
@@ -72,11 +72,10 @@ export interface BookImportFileResult {
 
 export interface BookImportTask {
   task_id: string
-  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed' | string
+  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'interrupted' | string
   stage: string
   message: string
   rebuild: boolean
-  account_id?: number
   started_at: number
   updated_at: number
   finished_at: number | null
@@ -128,6 +127,7 @@ export interface UserInfo {
   display_name: string
   department: string
   role?: string
+  roles?: string[]
   account_id?: number
 }
 
@@ -141,12 +141,21 @@ export interface Account {
   updated_at: string
 }
 
+export interface UserRoleSummary {
+  id: number
+  code: string
+  name: string
+  is_system: boolean
+}
+
 export interface AccountUser {
   id: number
   username: string
   display_name: string
   department: string
   role: string
+  role_codes: string[]
+  roles: UserRoleSummary[]
   created_at: string
 }
 
@@ -160,8 +169,23 @@ export interface AccountInvite {
   expires_at?: string | null
 }
 
+export interface PermissionInfo {
+  id: number
+  code: string
+  name: string
+  description: string
+  is_system: boolean
+}
+
 export interface RoleInfo {
+  id: number
+  account_id: number
+  code: string
   role: string
+  name: string
+  description: string
+  status: string
+  is_system: boolean
   permissions: string[]
 }
 

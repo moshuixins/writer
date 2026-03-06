@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -51,4 +51,4 @@ def set_preferences_batch(
     svc = MemoryService(db, account_id=current_user.account_id)
     for key, value in req.model_dump().items():
         svc.set_preference(user_id=current_user.id, key=key, value=value)
-    return {"message": "偏好已保存"}
+    return {"message": "偏好已保存"}

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any
 
@@ -6,8 +6,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.chat import ChatSession, SessionDraft
+from app.serializers import serialize_draft_response
 from app.services.editor_doc_parser import EditorDocParser
-from app.timezone import to_shanghai_iso
 
 
 class DraftService:
@@ -36,20 +36,20 @@ class DraftService:
         ).first()
 
         if not row:
-            return {
-                "exists": False,
-                "session_id": session_id,
-                "updated_at": None,
-                "draft": self.parser.default_draft(title=session.title or ""),
-            }
+            return serialize_draft_response(
+                session_id=session_id,
+                draft=self.parser.default_draft(title=session.title or ""),
+                exists=False,
+                updated_at=None,
+            )
 
         draft = self.parser.normalize_or_default(row.draft_json, title_fallback=session.title or "")
-        return {
-            "exists": True,
-            "session_id": session_id,
-            "updated_at": to_shanghai_iso(row.updated_at),
-            "draft": draft,
-        }
+        return serialize_draft_response(
+            session_id=session_id,
+            draft=draft,
+            exists=True,
+            updated_at=row.updated_at,
+        )
 
     def upsert_draft(
         self,

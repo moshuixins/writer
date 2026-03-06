@@ -1,8 +1,13 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any
+
+from app.database import SessionLocal
+from app.errors import logger
+from app.models.book_import_task import BookImportTask
 
 
 class BookImportTaskTracker:
@@ -14,6 +19,103 @@ class BookImportTaskTracker:
 
     def _now(self) -> float:
         return time.time()
+
+    def _dt_from_ts(self, value: float | None) -> datetime | None:
+        if not value:
+            return None
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+
+    def _ts_from_dt(self, value: datetime | None) -> float | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.timestamp()
+
+    def _task_from_row(self, row: BookImportTask) -> dict[str, Any]:
+        return {
+            "task_id": row.task_id,
+            "status": row.status,
+            "stage": row.stage,
+            "message": row.message or "",
+            "rebuild": bool(row.rebuild),
+            "account_id": int(row.account_id or 1),
+            "started_ts": self._ts_from_dt(row.started_at) or self._now(),
+            "updated_ts": self._ts_from_dt(row.updated_at) or self._now(),
+            "finished_ts": self._ts_from_dt(row.finished_at),
+            "total_files": int(row.total_files or 0),
+            "completed_files": int(row.completed_files or 0),
+            "failed_files": int(row.failed_files or 0),
+            "partial_files": int(row.partial_files or 0),
+            "skipped_files": int(row.skipped_files or 0),
+            "running_file": row.running_file or "",
+            "total_chunks": int(row.total_chunks or 0),
+            "completed_chunks": int(row.completed_chunks or 0),
+            "ocr_used_files": int(row.ocr_used_files or 0),
+            "ocr_pages": int(row.ocr_pages or 0),
+            "file_results": list(row.file_results or []),
+        }
+
+    def _load_db_task(self, task_id: str) -> dict[str, Any] | None:
+        db = SessionLocal()
+        try:
+            row = db.query(BookImportTask).filter(BookImportTask.task_id == task_id).first()
+            if row is None:
+                return None
+            return self._task_from_row(row)
+        finally:
+            db.close()
+
+    def _load_db_active_task(self, account_id: int) -> dict[str, Any] | None:
+        db = SessionLocal()
+        try:
+            row = (
+                db.query(BookImportTask)
+                .filter(
+                    BookImportTask.account_id == int(account_id or 1),
+                    BookImportTask.status.in_(["pending", "running"]),
+                )
+                .order_by(BookImportTask.updated_at.desc(), BookImportTask.id.desc())
+                .first()
+            )
+            if row is None:
+                return None
+            return self._task_from_row(row)
+        finally:
+            db.close()
+
+    def _persist_task(self, task: dict[str, Any]) -> None:
+        db = SessionLocal()
+        try:
+            row = db.query(BookImportTask).filter(BookImportTask.task_id == task["task_id"]).first()
+            if row is None:
+                row = BookImportTask(task_id=task["task_id"], account_id=int(task.get("account_id", 1) or 1))
+                db.add(row)
+            row.account_id = int(task.get("account_id", 1) or 1)
+            row.status = str(task.get("status", "pending") or "pending")
+            row.stage = str(task.get("stage", "") or "")
+            row.message = str(task.get("message", "") or "")
+            row.rebuild = bool(task.get("rebuild", False))
+            row.total_files = int(task.get("total_files", 0) or 0)
+            row.completed_files = int(task.get("completed_files", 0) or 0)
+            row.failed_files = int(task.get("failed_files", 0) or 0)
+            row.partial_files = int(task.get("partial_files", 0) or 0)
+            row.skipped_files = int(task.get("skipped_files", 0) or 0)
+            row.running_file = str(task.get("running_file", "") or "")
+            row.total_chunks = int(task.get("total_chunks", 0) or 0)
+            row.completed_chunks = int(task.get("completed_chunks", 0) or 0)
+            row.ocr_used_files = int(task.get("ocr_used_files", 0) or 0)
+            row.ocr_pages = int(task.get("ocr_pages", 0) or 0)
+            row.file_results = list(task.get("file_results", []))
+            row.started_at = self._dt_from_ts(task.get("started_ts")) or datetime.now(timezone.utc)
+            row.updated_at = self._dt_from_ts(task.get("updated_ts")) or datetime.now(timezone.utc)
+            row.finished_at = self._dt_from_ts(task.get("finished_ts"))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning("Book import task persistence failed: task_id=%s err=%s", task.get("task_id"), e)
+        finally:
+            db.close()
 
     def _prune_locked(self, now: float) -> None:
         expired = [
@@ -28,25 +130,6 @@ class BookImportTaskTracker:
             account_id = int(task.get("account_id", 1))
             if self._active_task_by_account.get(account_id) == task_id:
                 self._active_task_by_account.pop(account_id, None)
-
-    def reserve_slot(self, task_id: str, *, account_id: int) -> tuple[bool, str | None]:
-        """Reserve the per-account import slot.
-
-        Returns (ok, active_task_id_when_conflict).
-        """
-        now = self._now()
-        with self._lock:
-            self._prune_locked(now)
-            acc = int(account_id or 1)
-            active_id = self._active_task_by_account.get(acc)
-            if active_id:
-                active = self._tasks.get(active_id)
-                if active and active.get("status") in {"pending", "running"}:
-                    return False, active_id
-                self._active_task_by_account.pop(acc, None)
-
-            self._active_task_by_account[acc] = task_id
-            return True, None
 
     @staticmethod
     def _safe_percent(numerator: int, denominator: int) -> int:
@@ -87,6 +170,27 @@ class BookImportTaskTracker:
             "file_results": list(task.get("file_results", [])),
         }
 
+    def reserve_slot(self, task_id: str, *, account_id: int) -> tuple[bool, str | None]:
+        now = self._now()
+        with self._lock:
+            self._prune_locked(now)
+            acc = int(account_id or 1)
+            active_id = self._active_task_by_account.get(acc)
+            if active_id:
+                active = self._tasks.get(active_id) or self._load_db_task(active_id)
+                if active and active.get("status") in {"pending", "running"}:
+                    return False, active_id
+                self._active_task_by_account.pop(acc, None)
+
+            db_active = self._load_db_active_task(acc)
+            if db_active is not None:
+                self._active_task_by_account[acc] = db_active["task_id"]
+                self._tasks[db_active["task_id"]] = db_active
+                return False, db_active["task_id"]
+
+            self._active_task_by_account[acc] = task_id
+            return True, None
+
     def create_task(
         self,
         task_id: str,
@@ -108,7 +212,7 @@ class BookImportTaskTracker:
                 "started_ts": now,
                 "updated_ts": now,
                 "finished_ts": None,
-                "total_files": max(0, int(total_files)),
+                "total_files": int(total_files or 0),
                 "completed_files": 0,
                 "failed_files": 0,
                 "partial_files": 0,
@@ -121,6 +225,7 @@ class BookImportTaskTracker:
                 "file_results": [],
             }
             self._tasks[task_id] = task
+            self._persist_task(task)
             return self._format(task)
 
     def update(
@@ -144,7 +249,7 @@ class BookImportTaskTracker:
         now = self._now()
         with self._lock:
             self._prune_locked(now)
-            task = self._tasks.get(task_id)
+            task = self._tasks.get(task_id) or self._load_db_task(task_id)
             if not task:
                 return None
 
@@ -170,6 +275,8 @@ class BookImportTaskTracker:
                 task["file_results"].append(file_result)
 
             task["updated_ts"] = now
+            self._tasks[task_id] = task
+            self._persist_task(task)
             return self._format(task)
 
     def _release_slot_locked(self, task_id: str) -> None:
@@ -180,7 +287,7 @@ class BookImportTaskTracker:
     def finish(self, task_id: str, *, status: str = "completed", message: str = "") -> dict[str, Any] | None:
         now = self._now()
         with self._lock:
-            task = self._tasks.get(task_id)
+            task = self._tasks.get(task_id) or self._load_db_task(task_id)
             if not task:
                 return None
             task["status"] = status
@@ -189,13 +296,15 @@ class BookImportTaskTracker:
             task["running_file"] = ""
             task["finished_ts"] = now
             task["updated_ts"] = now
+            self._tasks[task_id] = task
+            self._persist_task(task)
             self._release_slot_locked(task_id)
             return self._format(task)
 
     def fail(self, task_id: str, message: str) -> dict[str, Any] | None:
         now = self._now()
         with self._lock:
-            task = self._tasks.get(task_id)
+            task = self._tasks.get(task_id) or self._load_db_task(task_id)
             if not task:
                 return None
             task["status"] = "failed"
@@ -204,6 +313,8 @@ class BookImportTaskTracker:
             task["running_file"] = ""
             task["finished_ts"] = now
             task["updated_ts"] = now
+            self._tasks[task_id] = task
+            self._persist_task(task)
             self._release_slot_locked(task_id)
             return self._format(task)
 
@@ -212,8 +323,11 @@ class BookImportTaskTracker:
         with self._lock:
             self._prune_locked(now)
             task = self._tasks.get(task_id)
-            if not task:
-                return None
+            if task is None:
+                task = self._load_db_task(task_id)
+                if task is None:
+                    return None
+                self._tasks[task_id] = task
             return self._format(task)
 
 

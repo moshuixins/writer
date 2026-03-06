@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import re
@@ -244,4 +244,4 @@ class MaterialService:
             q = q.filter(Material.doc_type == doc_type)
         if keyword:
             q = q.filter(Material.content_text.contains(keyword))
-        return q
+        return q

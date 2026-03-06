@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any, Generator
 
@@ -307,4 +307,4 @@ class WritingService:
             )
             .order_by(ChatSession.created_at.desc())
             .all()
-        )
+        )

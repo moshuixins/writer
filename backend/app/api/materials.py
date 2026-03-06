@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import json
@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth import ROLE_ADMIN, require_permission
+from app.auth import require_permission
+from app.rbac import ROLE_ADMIN
+from app.services.rbac_service import user_has_role
 from app.config import get_settings
 from app.database import get_db
 from app.errors import logger
@@ -23,13 +25,24 @@ from app.prompts.validators import (
     validate_keywords,
     validate_title,
 )
+from app.serializers import (
+    serialize_book_import_start_response,
+    serialize_book_import_task,
+    serialize_book_scan_item,
+    serialize_book_source,
+    serialize_collection_response,
+    serialize_material_detail,
+    serialize_material_list_item,
+    serialize_material_upload_result,
+    serialize_message_response,
+    serialize_upload_task,
+)
 from app.services.book_import_service import BookImportConflictError, BookImportService
 from app.services.book_import_task_service import book_import_task_tracker
 from app.services.context_bridge import ContextBridge
 from app.services.llm_service import LLMService
 from app.services.material_service import MaterialService
 from app.services.upload_progress_service import upload_progress_tracker
-from app.timezone import to_shanghai_iso
 
 router = APIRouter()
 ctx_bridge = ContextBridge()
@@ -167,14 +180,7 @@ async def upload_material(
             upload_progress_tracker.fail(task_id, message=f"处理失败，请重试（错误ID: {error_id}）")
         raise HTTPException(500, f"上传处理失败，请稍后重试（错误ID: {error_id}）")
 
-    return {
-        "id": material.id,
-        "title": material.title,
-        "doc_type": material.doc_type,
-        "summary": material.summary,
-        "keywords": material.keywords,
-        "char_count": material.char_count,
-    }
+    return serialize_material_upload_result(material)
 
 
 @router.get("/upload-tasks/{task_id}")
@@ -187,7 +193,7 @@ def get_upload_task(
         raise HTTPException(404, "上传任务不存在")
     if int(task.get("account_id", 1)) != int(current_user.account_id):
         raise HTTPException(404, "上传任务不存在")
-    return task
+    return serialize_upload_task(task)
 
 
 @router.get("")
@@ -221,21 +227,11 @@ def list_materials(
         limit=limit,
     )
     svc.normalize_materials_char_count(materials)
-    return {
-        "items": [
-            {
-                "id": m.id,
-                "title": m.title,
-                "doc_type": m.doc_type,
-                "summary": m.summary,
-                "keywords": m.keywords,
-                "char_count": svc.calculate_char_count(m.content_text or ""),
-                "created_at": to_shanghai_iso(m.created_at),
-            }
-            for m in materials
-        ],
-        "total": total,
-    }
+    items = [
+        serialize_material_list_item(material, char_count=svc.calculate_char_count(material.content_text or ""))
+        for material in materials
+    ]
+    return serialize_collection_response(items, total=total)
 
 
 @router.get("/search")
@@ -278,17 +274,7 @@ def get_material(
     if old_char_count != char_count:
         db.commit()
 
-    return {
-        "id": material.id,
-        "title": material.title,
-        "doc_type": material.doc_type,
-        "summary": material.summary,
-        "keywords": material.keywords,
-        "content_text": material.content_text,
-        "char_count": char_count,
-        "original_filename": material.original_filename,
-        "created_at": to_shanghai_iso(material.created_at),
-    }
+    return serialize_material_detail(material, char_count=char_count)
 
 
 @router.delete("/{material_id}")
@@ -304,7 +290,7 @@ async def delete_material(
     if material.user_id != current_user.id:
         raise HTTPException(403, "无权删除该素材")
     svc.delete_material(material_id, account_id=current_user.account_id)
-    return {"message": "删除成功"}
+    return serialize_message_response("删除成功")
 
 
 class BatchDeleteRequest(BaseModel):
@@ -328,26 +314,8 @@ def scan_books(
 ):
     svc = BookImportService(db, account_id=current_user.account_id)
     items = svc.scan_books()
-    public_items = [
-        {
-            "source_name": item["source_name"],
-            "relative_path": item["relative_path"],
-            "source_hash": item["source_hash"],
-            "file_ext": item["file_ext"],
-            "file_size": item["file_size"],
-            "imported": item.get("imported", False),
-            "status": item.get("status", "pending"),
-            "doc_type": item.get("doc_type", ""),
-            "updated_at": item.get("updated_at"),
-            "source_id": item.get("source_id"),
-        }
-        for item in items
-    ]
-    return {
-        "books_dir": _safe_books_dir(),
-        "total": len(public_items),
-        "items": public_items,
-    }
+    public_items = [serialize_book_scan_item(item) for item in items]
+    return serialize_collection_response(public_items, total=len(public_items), books_dir=_safe_books_dir())
 
 
 @router.post("/books/import")
@@ -356,7 +324,7 @@ def import_books(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("books:write")),
 ):
-    if req.rebuild and (current_user.role or "") != ROLE_ADMIN:
+    if req.rebuild and not user_has_role(current_user, ROLE_ADMIN):
         raise HTTPException(403, "仅管理员可执行重建导入")
 
     svc = BookImportService(db, account_id=current_user.account_id)
@@ -368,11 +336,7 @@ def import_books(
     except BookImportConflictError as e:
         raise HTTPException(409, f"已有导入任务在运行，请稍后重试（task_id: {e.active_task_id}）")
 
-    return {
-        "task_id": task_id,
-        "status": "pending",
-        "total_files": total_files,
-    }
+    return serialize_book_import_start_response(task_id, total_files=total_files)
 
 
 @router.get("/books/tasks/{task_id}")
@@ -385,7 +349,7 @@ def get_book_import_task(
         raise HTTPException(404, "书籍学习任务不存在")
     if int(task.get("account_id", 1)) != int(current_user.account_id):
         raise HTTPException(404, "书籍学习任务不存在")
-    return task
+    return serialize_book_import_task(task)
 
 
 @router.get("/books/sources")
@@ -404,29 +368,8 @@ def list_book_sources(
         .limit(limit)
         .all()
     )
-    return {
-        "total": total,
-        "items": [
-            {
-                "id": row.id,
-                "source_name": row.source_name,
-                "source_hash": row.source_hash,
-                "file_ext": row.file_ext,
-                "file_size": row.file_size,
-                "status": row.status,
-                "doc_type": row.doc_type,
-                "summary": row.summary,
-                "keywords": row.keywords or [],
-                "chunk_count": row.chunk_count,
-                "ocr_used": bool(row.ocr_used),
-                "error_message": row.error_message or "",
-                "metadata": row.metadata_ or {},
-                "created_at": to_shanghai_iso(row.created_at),
-                "updated_at": to_shanghai_iso(row.updated_at),
-            }
-            for row in rows
-        ],
-    }
+    items = [serialize_book_source(row) for row in rows]
+    return serialize_collection_response(items, total=total)
 
 
 @router.post("/batch-delete")
@@ -442,7 +385,7 @@ def batch_delete_materials(
     for mid in req.ids:
         if svc.delete_material(mid, account_id=current_user.account_id):
             deleted += 1
-    return {"message": f"已删除 {deleted} 条素材"}
+    return serialize_message_response(f"已删除 {deleted} 条素材")
 
 
 @router.post("/batch-classify")
@@ -470,4 +413,4 @@ def batch_classify_materials(
         .update({"doc_type": canonical_doc_type}, synchronize_session="fetch")
     )
     db.commit()
-    return {"message": f"已更新 {updated} 条素材的分类"}
+    return serialize_message_response(f"已更新 {updated} 条素材的分类")

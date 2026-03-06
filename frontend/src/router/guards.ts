@@ -2,6 +2,7 @@ import type { Router, RouteRecordRaw } from 'vue-router'
 import { useNProgress } from '@vueuse/integrations/useNProgress'
 import { asyncRoutes, asyncRoutesByFilesystem } from './routes'
 import '@/assets/styles/nprogress.css'
+import { findFirstAccessibleChildRoute } from '@/utils/permission'
 
 function setupRoutes(router: Router) {
   router.beforeEach(async (to, _from, next) => {
@@ -43,7 +44,7 @@ function setupRoutes(router: Router) {
       else {
         try {
           // 获取用户权限
-          settingsStore.settings.app.enablePermission && await userStore.getPermissions()
+          await userStore.getPermissions()
           // 生成动态路由
           switch (settingsStore.settings.app.routeBaseOn) {
             case 'frontend':
@@ -113,7 +114,7 @@ function setupRedirectAuthChildrenRoute(router: Router) {
     const { auth } = useAuth()
     const currentRoute = router.getRoutes().find(route => route.path === (to.matched.at(-1)?.path ?? ''))
     if (!currentRoute?.redirect) {
-      const findAuthRoute = currentRoute?.children?.find(route => route.meta?.menu !== false && auth(route.meta?.auth ?? ''))
+      const findAuthRoute = findFirstAccessibleChildRoute(currentRoute?.children, auth)
       if (findAuthRoute) {
         next(findAuthRoute)
       }
@@ -224,3 +225,4 @@ export default function setupGuards(router: Router) {
   setupKeepAlive(router)
   setupOther(router)
 }
+
