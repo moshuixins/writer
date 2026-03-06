@@ -52,7 +52,7 @@ def bootstrap_rbac() -> None:
         service.ensure_all_accounts_system_roles()
         service.backfill_user_roles_from_legacy()
         db.commit()
-        logger.info('Schema patch: RBAC bootstrap completed')
+        logger.info('Runtime bootstrap: RBAC bootstrap completed')
     except Exception as exc:
         db.rollback()
         logger.warning('RBAC bootstrap failed: %s', exc)
@@ -77,7 +77,7 @@ def mark_interrupted_book_tasks() -> None:
             row.message = row.message or '服务重启导致任务中断'
             row.finished_at = now
         db.commit()
-        logger.info('Schema patch: marked %s interrupted book import tasks', len(rows))
+        logger.info('Runtime bootstrap: marked %s interrupted book import tasks', len(rows))
     except Exception as exc:
         db.rollback()
         logger.warning('Book import task recovery failed: %s', exc)

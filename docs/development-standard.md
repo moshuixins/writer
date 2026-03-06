@@ -22,6 +22,13 @@
 2. 路由、菜单、按钮权限必须共用同一套判断规则，禁止各自写一套分支。
 3. 大页面中与模板无关的业务规则优先抽离，避免单文件持续膨胀。
 
+## 2.1 数据库迁移规范
+
+1. 数据库结构变更以 Alembic revision 为唯一真源，禁止继续把 `Base.metadata.create_all()` 当成正式迁移方案。
+2. 新增表、字段、索引、唯一约束后，必须同步生成并提交 Alembic migration。
+3. 仅允许在兼容旧库且缺少 `alembic_version` 时使用一次性 bootstrap + `stamp head`；新逻辑不得继续追加新的 schema patch 分支。
+4. 提交前至少执行一次 `python -m alembic -c alembic.ini upgrade head` 和 `python -m alembic -c alembic.ini check`。
+
 ## 3. 权限与安全规范
 
 1. 所有受保护接口必须在后端使用 `require_permission()` 或等价能力校验。

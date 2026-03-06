@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.api import chat as chat_api  # noqa: E402
 from app.auth import create_access_token, hash_password  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.book_import_task import BookImportTask  # noqa: E402
 from app.models.chat import ChatMessage, ChatSession  # noqa: E402
@@ -54,8 +55,9 @@ class BackendRegressionTests(unittest.TestCase):
 
     def setUp(self) -> None:
         Base.metadata.drop_all(bind=engine)
-        Base.metadata.create_all(bind=engine)
-        ensure_account_schema(engine)
+        with engine.begin() as conn:
+            conn.execute(text('DROP TABLE IF EXISTS alembic_version'))
+        ensure_account_schema(engine, run_post_schema_tasks=False)
 
     def _db(self):
         return SessionLocal()
@@ -166,6 +168,50 @@ class BackendRegressionTests(unittest.TestCase):
             created = users[0]
             role_codes = RBACService(db).get_user_role_codes(created)
             self.assertEqual(role_codes, ["writer"])
+        finally:
+            db.close()
+
+    def test_alembic_migration_creates_default_account(self) -> None:
+        db = self._db()
+        try:
+            from app.models.account import Account
+
+            row = db.query(Account).filter(Account.id == 1).first()
+            self.assertIsNotNone(row)
+            self.assertEqual(row.code, "default")
+            self.assertEqual(row.status, "active")
+        finally:
+            db.close()
+
+    def test_legacy_schema_is_stamped_to_alembic_head(self) -> None:
+        Base.metadata.drop_all(bind=engine)
+        with engine.begin() as conn:
+            conn.execute(text('DROP TABLE IF EXISTS alembic_version'))
+
+        Base.metadata.create_all(bind=engine)
+
+        db = self._db()
+        try:
+            from app.models.account import Account
+
+            db.query(Account).delete()
+            db.commit()
+        finally:
+            db.close()
+
+        ensure_account_schema(engine, run_post_schema_tasks=False)
+
+        with engine.begin() as conn:
+            version = conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one()
+            self.assertEqual(version, 'a72f14d61789')
+
+        db = self._db()
+        try:
+            from app.models.account import Account
+
+            row = db.query(Account).filter(Account.id == 1).first()
+            self.assertIsNotNone(row)
+            self.assertEqual(row.code, "default")
         finally:
             db.close()
 
