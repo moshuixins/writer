@@ -8,7 +8,6 @@ export const useUserStore = defineStore(
     const settingsStore = useSettingsStore()
     const routeStore = useRouteStore()
     const menuStore = useMenuStore()
-    const tabbarStore = useTabbarStore()
 
     const account = ref(localStorage.account ?? '')
     const token = ref(localStorage.token ?? '')
@@ -98,7 +97,6 @@ export const useUserStore = defineStore(
       user.value = null
       permissions.value = []
       settingsStore.updateSettings({}, true)
-      tabbarStore.clean()
       routeStore.removeRoutes()
       menuStore.setActived(0)
     }

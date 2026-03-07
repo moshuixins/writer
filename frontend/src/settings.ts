@@ -5,28 +5,17 @@ import { merge } from '@/utils/object'
 
 const globalSettings: Settings.all = {
   app: {
-    routeBaseOn: 'frontend',
     enablePermission: false,
     enableDynamicTitle: true,
   },
   home: {
     enable: true,
-    title: '公文写作助手',
+    title: '\u516C\u6587\u5199\u4F5C\u52A9\u624B',
     fullPath: '/chat',
   },
   menu: {
-    baseOn: 'frontend',
     mode: 'single',
     enableSubMenuCollapseButton: true,
-  },
-  toolbar: {
-    breadcrumb: false,
-    navSearch: false,
-    fullscreen: false,
-    colorScheme: true,
-  },
-  tabbar: {
-    enable: false,
   },
   copyright: {
     enable: false,

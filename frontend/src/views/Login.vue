@@ -1,10 +1,3 @@
-<route lang="yaml">
-meta:
-  title: 登录
-  constant: true
-  layout: false
-</route>
-
 <script setup lang="ts">
 import { ref } from 'vue'
 import LoginForm from '@/components/AccountForm/LoginForm.vue'

@@ -3,11 +3,8 @@ defineOptions({
   name: 'FaNotAllowed',
 })
 
-const route = useRoute()
 const router = useRouter()
-
 const settingsStore = useSettingsStore()
-const tabbarStore = useTabbarStore()
 
 const data = ref({
   inter: Number.NaN,
@@ -19,9 +16,6 @@ onUnmounted(() => {
 })
 
 onMounted(() => {
-  if (settingsStore.settings.tabbar.enable) {
-    tabbarStore.remove(route.meta.activeMenu || route.fullPath)
-  }
   data.value.inter = window.setInterval(() => {
     data.value.countdown--
     if (data.value.countdown === 0) {

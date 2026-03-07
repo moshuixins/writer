@@ -1,11 +1,3 @@
-<route lang="yaml">
-name: notFound
-meta:
-  title: 找不到页面
-  constant: true
-  layout: false
-</route>
-
 <script setup lang="ts">
 const router = useRouter()
 

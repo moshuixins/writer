@@ -1,18 +1,15 @@
 import type { Route } from '#/global'
 import type { RouteRecordRaw } from 'vue-router'
-import generatedRoutes from 'virtual:generated-pages'
-import { setupLayouts } from 'virtual:meta-layouts'
 import Admin from './modules/admin'
 import Writer from './modules/writer'
 
-// ??????????
 const constantRoutes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'login',
     component: () => import('@/views/login.vue'),
     meta: {
-      title: '??',
+      title: '\u767B\u5F55',
     },
   },
   {
@@ -20,12 +17,11 @@ const constantRoutes: RouteRecordRaw[] = [
     name: 'notFound',
     component: () => import('@/views/[...all].vue'),
     meta: {
-      title: '?????',
+      title: '\u627E\u4E0D\u5230\u9875\u9762',
     },
   },
 ]
 
-// ????
 const systemRoutes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -41,7 +37,7 @@ const systemRoutes: RouteRecordRaw[] = [
         name: 'reload',
         component: () => import('@/views/reload.vue'),
         meta: {
-          title: '????',
+          title: '\u5237\u65B0\u9875\u9762',
           breadcrumb: false,
         },
       },
@@ -49,40 +45,25 @@ const systemRoutes: RouteRecordRaw[] = [
   },
 ]
 
-// ????????????????
 const asyncRoutes: Route.recordMainRaw[] = [
   {
     meta: {
-      title: '????',
+      title: '\u5199\u4F5C\u5DE5\u4F5C\u533A',
       icon: 'i-ep:edit-pen',
     },
-    children: [
-      Writer,
-    ],
+    children: [Writer],
   },
   {
     meta: {
-      title: '????',
+      title: '\u7CFB\u7EDF\u7BA1\u7406',
       icon: 'i-ep:setting',
     },
-    children: [
-      Admin,
-    ],
+    children: [Admin],
   },
 ]
 
-const constantRoutesByFilesystem = generatedRoutes.filter((item) => {
-  return item.meta?.enabled !== false && item.meta?.constant === true
-})
-
-const asyncRoutesByFilesystem = [...setupLayouts(generatedRoutes.filter((item) => {
-  return item.meta?.enabled !== false && item.meta?.constant !== true && item.meta?.layout !== false
-}))]
-
 export {
   asyncRoutes,
-  asyncRoutesByFilesystem,
   constantRoutes,
-  constantRoutesByFilesystem,
   systemRoutes,
 }

@@ -1,7 +1,3 @@
-<route lang="yaml">
-name: reload
-</route>
-
 <script setup lang="ts">
 const router = useRouter()
 

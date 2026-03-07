@@ -10,8 +10,6 @@
     },
     "resolveJsonModule": true,
     "types": [
-      "vite-plugin-pages/client",
-      "vite-plugin-vue-meta-layouts/client",
       "vite-plugin-app-loading/client",
       "element-plus/global"
     ],

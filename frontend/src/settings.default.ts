@@ -1,5 +1,3 @@
-// 该文件为系统默认配置，请勿修改！！！
-
 import type { RecursiveRequired, Settings } from '#/global'
 
 const globalSettingsDefault: RecursiveRequired<Settings.all> = {
@@ -11,46 +9,21 @@ const globalSettingsDefault: RecursiveRequired<Settings.all> = {
     enablePermission: false,
     enableProgress: true,
     enableDynamicTitle: false,
-    routeBaseOn: 'frontend',
   },
   home: {
     enable: true,
-    title: '主页',
+    title: '\u4E3B\u9875',
     fullPath: '/',
   },
   layout: {
     enableMobileAdaptation: false,
   },
   menu: {
-    baseOn: 'frontend',
     mode: 'side',
     mainMenuClickMode: 'switch',
     subMenuUniqueOpened: true,
     subMenuCollapse: false,
     enableSubMenuCollapseButton: false,
-    enableHotkeys: false,
-  },
-  topbar: {
-    mode: 'static',
-  },
-  tabbar: {
-    enable: false,
-    enableIcon: false,
-    enableHotkeys: false,
-  },
-  toolbar: {
-    enable: true,
-    breadcrumb: true,
-    navSearch: true,
-    fullscreen: false,
-    pageReload: false,
-    colorScheme: false,
-  },
-  mainPage: {
-    enableHotkeys: true,
-  },
-  navSearch: {
-    enableHotkeys: true,
   },
   copyright: {
     enable: false,

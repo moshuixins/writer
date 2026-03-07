@@ -24,7 +24,7 @@ watch([
   () => settingsStore.settings.app.enableDynamicTitle,
   () => settingsStore.title,
 ], () => {
-  const appTitle = import.meta.env.VITE_APP_TITLE || '公文写作系统'
+  const appTitle = import.meta.env.VITE_APP_TITLE || '\u516C\u6587\u5199\u4F5C\u7CFB\u7EDF'
   if (settingsStore.settings.app.enableDynamicTitle && settingsStore.title) {
     const title = typeof settingsStore.title === 'function' ? settingsStore.title() : settingsStore.title
     document.title = `${title} - ${appTitle}`
@@ -55,6 +55,5 @@ onUnmounted(() => {
     <FaBackToTop />
     <FaToast />
     <FaNotification />
-    <FaSystemInfo />
   </Provider>
 </template>
