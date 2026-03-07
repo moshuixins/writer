@@ -1,7 +1,6 @@
 import type { PluginOption } from 'vite'
 import path from 'node:path'
 import process from 'node:process'
-import vueLegacy from '@vitejs/plugin-legacy'
 import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
 import Unocss from 'unocss/vite'
@@ -21,14 +20,6 @@ export default function createVitePlugins(mode: string, isBuild = false) {
   const vitePlugins: (PluginOption | PluginOption[])[] = [
     vue(),
     vueJsx(),
-    vueLegacy({
-      renderLegacyChunks: false,
-      modernPolyfills: [
-        'es.array.at',
-        'es.array.find-last',
-        'es.object.has-own',
-      ],
-    }),
     viteEnv.VITE_OPEN_DEVTOOLS && VueDevTools({
       launchEditor: viteEnv.VITE_VUE_DEVTOOLS_LAUNCH_EDITOR ?? 'vscode',
     }),

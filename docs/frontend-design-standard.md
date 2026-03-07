@@ -109,7 +109,7 @@
 
 ## 6. 兼容性规范
 
-1. 构建链已启用 `autoprefixer` 和 `@vitejs/plugin-legacy`，但使用新特性时仍需提供降级方案。
+1. 构建链已启用 `autoprefixer`；默认浏览器基线以当前 Vite Baseline 为准，使用新特性时仍需提供降级方案。
 2. 对 `backdrop-filter`、`mask-image`、`view-transition`、自定义滚动条这类增强特性，必须保证在不支持时页面仍可正常使用。
 3. 不依赖 `-webkit-` 私有属性作为唯一实现。
 
