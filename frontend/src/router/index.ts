@@ -12,7 +12,11 @@ const router = createRouter({
 setupGuards(router)
 setupExtensions(router)
 
-router.isReady().then(() => {
+router.afterEach(() => {
+  loadingFadeOut()
+})
+
+router.isReady().finally(() => {
   loadingFadeOut()
 })
 

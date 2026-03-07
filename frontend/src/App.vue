@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
 import { ua } from '@/utils/ua'
+import { loadingFadeOut } from '@/utils/app-loading'
 import Provider from './ui/provider/index.vue'
 
 const route = useRoute()
@@ -38,6 +39,7 @@ watch([
 
 onMounted(() => {
   syncViewportMode()
+  loadingFadeOut()
   window.addEventListener('resize', syncViewportMode)
 })
 

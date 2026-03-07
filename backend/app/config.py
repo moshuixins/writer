@@ -6,6 +6,13 @@ from functools import lru_cache
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _resolve_project_path(value: str) -> str:
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        return str(candidate)
+    return str((PROJECT_ROOT / candidate).resolve())
+
+
 class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str = ""
@@ -64,6 +71,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_security_settings(self):
+        self.openviking_config_file = _resolve_project_path(self.openviking_config_file)
+        self.openviking_shared_backend_dir = _resolve_project_path(self.openviking_shared_backend_dir)
+        self.upload_dir = _resolve_project_path(self.upload_dir)
+        self.export_dir = _resolve_project_path(self.export_dir)
+        self.books_dir = _resolve_project_path(self.books_dir)
+
         insecure_secret = self.secret_key.strip() in {"", "change-this-to-a-random-secret-key"}
         insecure_ov_key = self.openviking_root_api_key.strip() in {"", "ov-writer-secret-key-change-me"}
         if insecure_secret:
@@ -75,4 +88,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings()
+

@@ -166,7 +166,11 @@ function inviteStatusTone(status: string): 'neutral' | 'success' | 'danger' {
 
                   <el-table-column prop="username" label="用户名" min-width="140" />
                   <el-table-column prop="display_name" label="姓名" min-width="120" />
-                  <el-table-column prop="department" label="部门" min-width="140" />
+                  <el-table-column label="部门" min-width="140">
+                    <template #default="{ row }">
+                      {{ row.department || '未设置' }}
+                    </template>
+                  </el-table-column>
                   <el-table-column label="角色绑定" min-width="320">
                     <template #default="{ row }">
                       <div class="role-cell">

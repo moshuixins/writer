@@ -45,16 +45,16 @@ defineExpose({
   <div class="writing-editor-pane">
     <div class="writing-editor-pane__meta">
       <h3 class="writing-editor-pane__title">
-        ?????
+        正文草稿
       </h3>
-      <span v-if="currentSession" class="writing-editor-pane__hint">????????</span>
+      <span v-if="currentSession" class="writing-editor-pane__hint">编辑器与当前会话绑定，支持自动保存和引用选中文本。</span>
     </div>
 
     <template v-if="!currentSession">
       <EmptyState
         icon="i-ep:document"
-        title="??????"
-        description="??????????????????????????????"
+        title="请先选择会话"
+        description="选择左侧会话后，编辑器会加载当前草稿，并支持自动保存与引用选中文本。"
       />
     </template>
     <template v-else-if="loadingDraft">

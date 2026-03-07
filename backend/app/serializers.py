@@ -22,14 +22,29 @@ from app.services.rbac_service import RBACService
 from app.timezone import to_shanghai_iso
 
 
+def _sanitize_display_text(value: Any) -> str:
+    if value is None:
+        return ""
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    placeholder_chars = {"?", "？", "�"}
+    if all(char in placeholder_chars for char in text):
+        return ""
+
+    return text
+
+
 def serialize_auth_user(db: Session, user: User) -> dict[str, Any]:
     service = RBACService(db)
     service.attach_user_access_context(user)
     return {
         "id": user.id,
         "username": user.username,
-        "display_name": user.display_name,
-        "department": user.department,
+        "display_name": _sanitize_display_text(user.display_name),
+        "department": _sanitize_display_text(user.department),
         "role": getattr(user, "_primary_role", user.role),
         "roles": list(getattr(user, "_role_codes", []) or []),
         "account_id": user.account_id,
@@ -148,8 +163,8 @@ def serialize_account_users(db: Session, users: list[User]) -> list[dict[str, An
             {
                 "id": user.id,
                 "username": user.username,
-                "display_name": user.display_name,
-                "department": user.department,
+                "display_name": _sanitize_display_text(user.display_name),
+                "department": _sanitize_display_text(user.department),
                 "role": service.get_primary_role_code(user, role_codes),
                 "role_codes": role_codes,
                 "roles": role_items,
