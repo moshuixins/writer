@@ -74,7 +74,7 @@ export default defineConfig(({ mode, command }) => {
     },
     // ???? https://cn.vitejs.dev/config/build-options
     build: {
-      outDir: mode === 'production' ? 'dist' : `dist-${mode}`,
+      outDir: ['production', 'release'].includes(mode) ? 'dist' : `dist-${mode}`,
       sourcemap: env.VITE_BUILD_SOURCEMAP === 'true',
       chunkSizeWarningLimit: 1200,
       rollupOptions: {

@@ -10,7 +10,6 @@
     },
     "resolveJsonModule": true,
     "types": [
-      "vite-plugin-app-loading/client",
       "element-plus/global"
     ],
     "allowJs": false,

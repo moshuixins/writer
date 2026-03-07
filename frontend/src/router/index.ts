@@ -1,5 +1,5 @@
-import { loadingFadeOut } from 'virtual:app-loading'
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { loadingFadeOut } from '@/utils/app-loading'
 import setupExtensions from './extensions'
 import setupGuards from './guards'
 import { constantRoutes } from './routes'

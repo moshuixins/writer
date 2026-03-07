@@ -8,22 +8,22 @@ import autoImport from 'unplugin-auto-import/vite'
 import TurboConsole from 'unplugin-turbo-console/vite'
 import components from 'unplugin-vue-components/vite'
 import { loadEnv } from 'vite'
-import AppLoading from 'vite-plugin-app-loading'
 import Archiver from 'vite-plugin-archiver'
 import { compression } from 'vite-plugin-compression2'
 import { envParse, parseLoadedEnv } from 'vite-plugin-env-parse'
 import { createSvgIconsPlugin } from 'vite-plugin-svg-icons'
 import VueDevTools from 'vite-plugin-vue-devtools'
+import { createAppLoadingPlugin } from './appLoading'
 
 export default function createVitePlugins(mode: string, isBuild = false) {
   const viteEnv = parseLoadedEnv(loadEnv(mode, process.cwd()))
   const vitePlugins: (PluginOption | PluginOption[])[] = [
     vue(),
     vueJsx(),
-    viteEnv.VITE_OPEN_DEVTOOLS && VueDevTools({
+    !isBuild && viteEnv.VITE_OPEN_DEVTOOLS && VueDevTools({
       launchEditor: viteEnv.VITE_VUE_DEVTOOLS_LAUNCH_EDITOR ?? 'vscode',
     }),
-    envParse({
+    !isBuild && envParse({
       dtsPath: 'src/types/env.d.ts',
     }),
     autoImport({
@@ -61,8 +61,11 @@ export default function createVitePlugins(mode: string, isBuild = false) {
     viteEnv.VITE_BUILD_ARCHIVE && Archiver({
       archiveType: viteEnv.VITE_BUILD_ARCHIVE,
     }),
-    AppLoading('loading.html'),
-    TurboConsole(),
+    createAppLoadingPlugin({
+      appTitle: viteEnv.VITE_APP_TITLE,
+      htmlPath: 'loading.html',
+    }),
+    !isBuild && TurboConsole(),
   ]
   return vitePlugins
 }
