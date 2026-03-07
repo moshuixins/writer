@@ -2,17 +2,17 @@ import type { Route } from '#/global'
 import type { RouteRecordRaw } from 'vue-router'
 import generatedRoutes from 'virtual:generated-pages'
 import { setupLayouts } from 'virtual:meta-layouts'
-import Writer from './modules/writer'
 import Admin from './modules/admin'
+import Writer from './modules/writer'
 
-// 固定路由（默认路由）
+// ??????????
 const constantRoutes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'login',
     component: () => import('@/views/login.vue'),
     meta: {
-      title: '登录',
+      title: '??',
     },
   },
   {
@@ -20,15 +20,16 @@ const constantRoutes: RouteRecordRaw[] = [
     name: 'notFound',
     component: () => import('@/views/[...all].vue'),
     meta: {
-      title: '找不到页面',
+      title: '?????',
     },
   },
 ]
 
-// 系统路由
+// ????
 const systemRoutes: RouteRecordRaw[] = [
   {
     path: '/',
+    redirect: '/chat',
     component: () => import('@/layouts/index.vue'),
     meta: {
       title: () => useSettingsStore().settings.home.title,
@@ -36,20 +37,11 @@ const systemRoutes: RouteRecordRaw[] = [
     },
     children: [
       {
-        path: '',
-        component: () => import('@/views/index.vue'),
-        meta: {
-          title: () => useSettingsStore().settings.home.title,
-          icon: 'i-ant-design:home-twotone',
-          breadcrumb: false,
-        },
-      },
-      {
         path: 'reload',
         name: 'reload',
         component: () => import('@/views/reload.vue'),
         meta: {
-          title: '重新加载',
+          title: '????',
           breadcrumb: false,
         },
       },
@@ -57,11 +49,11 @@ const systemRoutes: RouteRecordRaw[] = [
   },
 ]
 
-// 动态路由（异步路由、导航栏路由）
+// ????????????????
 const asyncRoutes: Route.recordMainRaw[] = [
   {
     meta: {
-      title: '公文写作',
+      title: '????',
       icon: 'i-ep:edit-pen',
     },
     children: [
@@ -70,7 +62,7 @@ const asyncRoutes: Route.recordMainRaw[] = [
   },
   {
     meta: {
-      title: 'Admin',
+      title: '????',
       icon: 'i-ep:setting',
     },
     children: [

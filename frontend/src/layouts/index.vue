@@ -1,254 +1,404 @@
 <script setup lang="ts">
-import { useSlots } from '@/slots'
-import eventBus from '@/utils/eventBus'
-import AppSetting from './components/AppSetting/index.vue'
-import Header from './components/Header/index.vue'
-import HotkeysIntro from './components/HotkeysIntro/index.vue'
-import MainSidebar from './components/MainSidebar/index.vue'
-import SubSidebar from './components/SubSidebar/index.vue'
-import Topbar from './components/Topbar/index.vue'
-import LinkView from './components/views/link.vue'
+import { computed, ref, watch } from 'vue'
+import { businessNavGroups } from './navigation'
 
 defineOptions({
   name: 'Layout',
 })
 
-const routeInfo = useRoute()
+const route = useRoute()
+const router = useRouter()
+const userStore = useUserStore()
+const { auth } = useAuth()
 
-const settingsStore = useSettingsStore()
-const keepAliveStore = useKeepAliveStore()
-const menuStore = useMenuStore()
+const mobileMenuOpen = ref(false)
 
-// 头部是否隐藏
-const isHeaderHide = computed(() => {
-  return ['single', 'side'].includes(settingsStore.settings.menu.mode) || settingsStore.mode === 'mobile'
+const visibleGroups = computed(() => {
+  return businessNavGroups
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => auth(item.auth ?? '')),
+    }))
+    .filter(group => group.items.length > 0)
 })
 
-// 侧边栏主导航是否隐藏
-const isMainSidebarHide = computed(() => {
-  return settingsStore.settings.menu.mode === 'single'
-    || (settingsStore.settings.menu.mode === 'head' && settingsStore.mode !== 'mobile')
+const currentNavItem = computed(() => {
+  return visibleGroups.value
+    .flatMap(group => group.items.map(item => ({ ...item, groupTitle: group.title })))
+    .find(item => route.path === item.path)
 })
 
-// 侧边栏次导航是否隐藏
-const isSubSidebarHide = computed(() => {
-  return menuStore.sidebarMenus.every(item => item.meta?.menu === false)
-})
-
-// 标签栏是否隐藏
-const isTabbarHide = computed(() => {
-  return !settingsStore.settings.tabbar.enable
-})
-
-// 工具栏是否隐藏
-const isToolbarHide = computed(() => {
-  return !settingsStore.settings.toolbar.enable
-    || !Object.keys(settingsStore.settings.toolbar).some((key) => {
-      if (settingsStore.settings.app.routeBaseOn === 'filesystem' && key === 'breadcrumb') {
-        return false
-      }
-      return settingsStore.settings.toolbar[key as keyof typeof settingsStore.settings.toolbar]
-    })
-})
-
-const isLink = computed(() => !!routeInfo.meta.link)
-
-watch(() => settingsStore.settings.menu.subMenuCollapse, (val) => {
-  if (settingsStore.mode === 'mobile') {
-    if (!val) {
-      document.body.classList.add('overflow-hidden')
-    }
-    else {
-      document.body.classList.remove('overflow-hidden')
-    }
+const currentSectionTitle = computed(() => currentNavItem.value?.groupTitle || '工作台')
+const currentRouteTitle = computed(() => {
+  if (typeof route.meta.title === 'string' && route.meta.title) {
+    return route.meta.title
   }
+  return currentNavItem.value?.title || '页面信息'
 })
 
-watch(() => routeInfo.path, () => {
-  if (settingsStore.mode === 'mobile') {
-    settingsStore.$patch((state) => {
-      state.settings.menu.subMenuCollapse = true
-    })
+function isActive(path: string) {
+  return route.path === path
+}
+
+async function go(path: string) {
+  mobileMenuOpen.value = false
+  if (route.path !== path) {
+    await router.push(path)
   }
-})
+}
 
-const enableAppSetting = import.meta.env.VITE_APP_SETTING
+watch(() => route.fullPath, () => {
+  mobileMenuOpen.value = false
+})
 </script>
 
 <template>
-  <div
-    class="layout" :style="{
-      '--g-header-actual-height': isHeaderHide ? '0px' : 'var(--g-header-height)',
-      '--g-main-sidebar-actual-width': isMainSidebarHide ? '0px' : 'var(--g-main-sidebar-width)',
-      '--g-sub-sidebar-actual-width': isSubSidebarHide ? '0px' : (settingsStore.settings.menu.subMenuCollapse && settingsStore.mode !== 'mobile' ? 'var(--g-sub-sidebar-collapse-width)' : 'var(--g-sub-sidebar-width)'),
-      '--g-tabbar-actual-height': isTabbarHide ? '0px' : 'var(--g-tabbar-height)',
-      '--g-toolbar-actual-height': isToolbarHide ? '0px' : 'var(--g-toolbar-height)',
-    }"
-  >
-    <div id="app-main">
-      <Header />
-      <div class="wrapper">
-        <div class="sidebar-container" :class="{ show: settingsStore.mode === 'mobile' && !settingsStore.settings.menu.subMenuCollapse }">
-          <MainSidebar />
-          <SubSidebar />
+  <div class="app-shell">
+    <div v-if="mobileMenuOpen" class="app-shell__mask" @click="mobileMenuOpen = false" />
+
+    <aside class="app-shell__sidebar" :class="{ 'is-open': mobileMenuOpen }">
+      <div class="app-shell__brand">
+        <div class="app-shell__brand-mark">
+          W
         </div>
-        <div class="invisible fixed inset-0 z-1009 bg-black/50 op-0 backdrop-blur-sm transition-opacity" :class="{ 'op-100! visible!': settingsStore.mode === 'mobile' && !settingsStore.settings.menu.subMenuCollapse }" @click="settingsStore.toggleSidebarCollapse()" />
-        <div class="main-container pb-[var(--g-main-container-padding-bottom)]">
-          <Topbar />
-          <div class="main">
-            <RouterView v-slot="{ Component, route }">
-              <Transition :name="!settingsStore.isReloading ? 'slide-right' : ''" mode="out-in">
-                <KeepAlive :include="keepAliveStore.list">
-                  <component :is="Component" v-show="!isLink" :key="route.fullPath" />
-                </KeepAlive>
-              </Transition>
-            </RouterView>
-            <LinkView v-if="isLink" />
+        <div class="app-shell__brand-text">
+          <strong>公文写作系统</strong>
+          <span>写作工作区与管理后台</span>
+        </div>
+      </div>
+
+      <nav class="app-shell__nav">
+        <section v-for="group in visibleGroups" :key="group.key" class="app-shell__nav-group">
+          <div class="app-shell__nav-group-title">
+            {{ group.title }}
           </div>
-          <FaCopyright />
+          <button
+            v-for="item in group.items"
+            :key="item.key"
+            class="app-shell__nav-item"
+            :class="{ 'is-active': isActive(item.path) }"
+            type="button"
+            @click="go(item.path)"
+          >
+            <FaIcon :name="item.icon" class="app-shell__nav-icon" />
+            <span>{{ item.title }}</span>
+          </button>
+        </section>
+      </nav>
+
+      <div class="app-shell__sidebar-foot">
+        <div class="app-shell__account-card">
+          <div class="app-shell__account-label">
+            当前账户
+          </div>
+          <div class="app-shell__account-name">
+            {{ userStore.account || '未命名账户' }}
+          </div>
         </div>
       </div>
+    </aside>
+
+    <div class="app-shell__main">
+      <header class="app-shell__topbar">
+        <div class="app-shell__topbar-main">
+          <button class="app-shell__menu-trigger" type="button" @click="mobileMenuOpen = true">
+            <FaIcon name="i-ep:menu" />
+          </button>
+          <div class="app-shell__topbar-title-wrap">
+            <div class="app-shell__topbar-section">
+              {{ currentSectionTitle }}
+            </div>
+            <h1 class="app-shell__topbar-title">
+              {{ currentRouteTitle }}
+            </h1>
+          </div>
+        </div>
+        <div class="app-shell__topbar-actions">
+          <div class="app-shell__topbar-summary">
+            <span>{{ userStore.user?.display_name || userStore.account || '未登录用户' }}</span>
+            <span>{{ userStore.user?.department || '未设置部门' }}</span>
+          </div>
+          <AppUserMenu />
+        </div>
+      </header>
+
+      <main class="app-shell__canvas">
+        <RouterView v-slot="{ Component, route: currentRoute }">
+          <Transition name="canvas-fade" mode="out-in">
+            <component :is="Component" :key="currentRoute.fullPath" />
+          </Transition>
+        </RouterView>
+      </main>
     </div>
-    <HotkeysIntro />
-    <template v-if="enableAppSetting">
-      <div class="app-setting" @click="eventBus.emit('global-app-setting-toggle')">
-        <FaIcon name="i-uiw:setting-o" class="icon" />
-      </div>
-      <AppSetting />
-    </template>
-    <component :is="useSlots('free-position')" />
   </div>
 </template>
 
 <style scoped>
-[data-mode="mobile"] {
-  .sidebar-container {
-    transform: translateX(calc((var(--g-main-sidebar-width) + var(--g-sub-sidebar-width)) * -1));
-
-    &.show {
-      transform: translateX(0);
-    }
-  }
-
-  .main-container {
-    margin-left: 0 !important;
-  }
-
-  &[data-menu-mode="single"] {
-    .sidebar-container {
-      transform: translateX(calc(var(--g-sub-sidebar-width) * -1));
-
-      &.show {
-        transform: translateX(0);
-      }
-    }
-  }
-}
-
-.layout {
-  height: 100%;
-}
-
-#app-main {
-  width: 100%;
-  height: 100%;
-  margin: 0 auto;
-}
-
-.wrapper {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  padding-top: var(--g-header-actual-height);
-  transition: padding-top 0.3s;
-
-  .sidebar-container {
-    position: fixed;
-    top: var(--g-header-actual-height);
-    bottom: 0;
-    z-index: 1010;
-    display: flex;
-    width: calc(var(--g-main-sidebar-actual-width) + var(--g-sub-sidebar-actual-width));
-    box-shadow: -1px 0 0 0 hsl(var(--border)), 1px 0 0 0 hsl(var(--border));
-    transition: width 0.3s, transform 0.3s, box-shadow 0.3s, top 0.3s;
-
-    &:has(> .main-sidebar-container.main-sidebar-enter-active),
-    &:has(> .main-sidebar-container.main-sidebar-leave-active),
-    &:has(> .sub-sidebar-container.sub-sidebar-enter-active),
-    &:has(> .sub-sidebar-container.sub-sidebar-leave-active) {
-      overflow: hidden;
-    }
-  }
-
-  .main-sidebar-container:not(.main-sidebar-leave-active) + .sub-sidebar-container {
-    left: var(--g-main-sidebar-width);
-  }
-
-  .main-container {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
-    margin-left: calc(var(--g-main-sidebar-actual-width) + var(--g-sub-sidebar-actual-width));
-    background-color: var(--g-main-area-bg);
-    box-shadow: -1px 0 0 0 hsl(var(--border)), 1px 0 0 0 hsl(var(--border));
-    transition: margin-left 0.3s, background-color 0.3s, box-shadow 0.3s;
-
-    .main {
-      position: relative;
-      flex: auto;
-      height: 100%;
-      margin: calc(var(--g-tabbar-actual-height) + var(--g-toolbar-actual-height)) 0 0;
-      overflow: hidden;
-    }
-  }
-}
-
-.app-setting {
-  --uno: bg-primary text-primary-foreground rounded-l-md;
-
-  position: fixed;
-  top: calc(50% + 250px);
-  right: 0;
-  z-index: 10;
+.app-shell {
   display: flex;
+  min-height: 100%;
+  color: var(--w-text-primary);
+  background: var(--w-shell-bg);
+}
+
+.app-shell__mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--w-overlay);
+}
+
+.app-shell__sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: var(--w-sidebar-width);
+  min-height: 100vh;
+  padding: 20px 16px 16px;
+  color: var(--w-shell-sidebar-text);
+  background: radial-gradient(circle at top, var(--w-shell-sidebar-glow) 0%, transparent 32%), var(--w-shell-sidebar-bg);
+}
+
+.app-shell__brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 10px 14px;
+  border-bottom: 1px solid var(--w-shell-sidebar-border);
+}
+
+.app-shell__brand-mark {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 50px;
-  height: 50px;
-  font-size: 24px;
+  width: 42px;
+  height: 42px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--w-shell-sidebar-active-text);
+  background: var(--w-shell-sidebar-active-bg);
+  border-radius: 12px;
+}
+
+.app-shell__brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.app-shell__brand-text strong {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.app-shell__brand-text span {
+  font-size: 12px;
+  color: var(--w-shell-sidebar-muted);
+}
+
+.app-shell__nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.app-shell__nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-shell__nav-group-title {
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--w-shell-sidebar-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.app-shell__nav-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 12px 14px;
+  color: inherit;
   cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
 
-  .icon {
-    animation: rotate 5s linear infinite;
+.app-shell__nav-item:hover {
+  background: var(--w-shell-sidebar-card);
+  border-color: var(--w-shell-sidebar-border);
+  transform: translateX(2px);
+}
+
+.app-shell__nav-item.is-active {
+  color: var(--w-shell-sidebar-active-text);
+  background: var(--w-shell-sidebar-active-bg);
+}
+
+.app-shell__nav-icon {
+  font-size: 18px;
+}
+
+.app-shell__sidebar-foot {
+  padding-top: 6px;
+}
+
+.app-shell__account-card {
+  padding: 14px;
+  background: var(--w-shell-sidebar-card);
+  border: 1px solid var(--w-shell-sidebar-border);
+  border-radius: 16px;
+}
+
+.app-shell__account-label {
+  font-size: 11px;
+  color: var(--w-shell-sidebar-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.app-shell__account-name {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.app-shell__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-shell__topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--w-topbar-height);
+  padding: 16px 24px;
+  background: var(--w-shell-topbar-bg);
+  border-bottom: 1px solid var(--w-shell-topbar-border);
+}
+
+@supports (backdrop-filter: blur(12px)) {
+  .app-shell__topbar {
+    backdrop-filter: blur(12px);
+  }
+}
+
+.app-shell__topbar-main,
+.app-shell__topbar-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.app-shell__topbar-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-shell__topbar-section {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--w-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.app-shell__topbar-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.app-shell__topbar-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+  font-size: 12px;
+  color: var(--w-text-secondary);
+}
+
+.app-shell__menu-trigger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: var(--w-text-primary);
+  background: var(--w-color-white);
+  border: 1px solid var(--w-divider);
+  border-radius: 12px;
+}
+
+.app-shell__canvas {
+  flex: 1;
+  min-width: 0;
+  background: var(--w-shell-canvas-bg);
+}
+
+.canvas-fade-enter-active,
+.canvas-fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.canvas-fade-enter-from,
+.canvas-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (max-width: 1024px) {
+  .app-shell {
+    min-height: 100vh;
   }
 
-  @keyframes rotate {
-    from {
-      transform: rotate(0deg);
-    }
+  .app-shell__sidebar {
+    position: fixed;
+    left: 0;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
 
-    to {
-      transform: rotate(360deg);
-    }
+  .app-shell__sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .app-shell__menu-trigger {
+    display: inline-flex;
   }
 }
 
-/* 主内容区动画 */
-.slide-right-enter-active {
-  transition: 0.2s;
-}
+@media (max-width: 768px) {
+  .app-shell__topbar {
+    padding: 14px 16px;
+  }
 
-.slide-right-leave-active {
-  transition: 0.15s;
-}
+  .app-shell__topbar-title {
+    font-size: 18px;
+  }
 
-.slide-right-enter-from {
-  margin-left: -20px;
-  opacity: 0;
-}
-
-.slide-right-leave-to {
-  margin-left: 20px;
-  opacity: 0;
+  .app-shell__topbar-summary {
+    display: none;
+  }
 }
 </style>

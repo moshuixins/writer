@@ -1,6 +1,6 @@
-import api from '../index'
 import type { AxiosRequestConfig } from 'axios'
 import type { UserInfo } from '@/types/writer'
+import api from '../index'
 
 export default {
   login: (data: { account: string, password: string }) =>

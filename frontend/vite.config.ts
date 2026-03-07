@@ -6,10 +6,48 @@ import { defineConfig, loadEnv } from 'vite'
 import pkg from './package.json'
 import createVitePlugins from './vite/plugins'
 
+const manualChunkGroups = [
+  {
+    name: 'tinymce-vendor',
+    matchers: ['/tinymce/', '/@tinymce/tinymce-vue/'],
+  },
+  {
+    name: 'element-plus-vendor',
+    matchers: ['/element-plus/', '/@element-plus/icons-vue/'],
+  },
+  {
+    name: 'framework-vendor',
+    matchers: ['/vue/', '/vue-router/', '/pinia/', '/@vueuse/'],
+  },
+  {
+    name: 'writer-vendor',
+    matchers: ['/markdown-it/', '/dompurify/', '/dayjs/', '/axios/', '/es-toolkit/'],
+  },
+  {
+    name: 'ui-vendor',
+    matchers: ['/reka-ui/', '/lucide-vue-next/', '/class-variance-authority/', '/clsx/', '/tailwind-merge/'],
+  },
+] as const
+
+function resolveManualChunk(id: string) {
+  const normalizedId = id.replace(/\\/g, '/')
+  if (!normalizedId.includes('/node_modules/')) {
+    return undefined
+  }
+
+  for (const group of manualChunkGroups) {
+    if (group.matchers.some(matcher => normalizedId.includes(matcher))) {
+      return group.name
+    }
+  }
+
+  return undefined
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd())
-  // 全局 scss 资源
+  // ?? scss ??
   const scssResources: string[] = []
   fs.readdirSync('src/assets/styles/resources').forEach((dirname) => {
     if (fs.statSync(`src/assets/styles/resources/${dirname}`).isFile()) {
@@ -17,7 +55,7 @@ export default defineConfig(({ mode, command }) => {
     }
   })
   return {
-    // 开发服务器选项 https://cn.vitejs.dev/config/server-options
+    // ??????? https://cn.vitejs.dev/config/server-options
     server: {
       open: true,
       host: true,
@@ -34,11 +72,16 @@ export default defineConfig(({ mode, command }) => {
         },
       },
     },
-    // 构建选项 https://cn.vitejs.dev/config/build-options
+    // ???? https://cn.vitejs.dev/config/build-options
     build: {
       outDir: mode === 'production' ? 'dist' : `dist-${mode}`,
       sourcemap: env.VITE_BUILD_SOURCEMAP === 'true',
       chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          manualChunks: resolveManualChunk,
+        },
+      },
     },
     define: {
       __SYSTEM_INFO__: JSON.stringify({

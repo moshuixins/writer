@@ -6,10 +6,10 @@ meta:
 </route>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import LoginForm from '@/components/AccountForm/LoginForm.vue'
 import RegisterForm from '@/components/AccountForm/RegisterForm.vue'
 import ResetPasswordForm from '@/components/AccountForm/ResetPasswordForm.vue'
-import ColorScheme from '@/layouts/components/Topbar/Toolbar/ColorScheme/index.vue'
 
 defineOptions({
   name: 'Login',
@@ -21,147 +21,147 @@ const settingsStore = useSettingsStore()
 
 const redirect = ref(route.query.redirect?.toString() ?? settingsStore.settings.home.fullPath)
 const account = ref<string>()
-// 表单类型
 const formType = ref<'login' | 'register' | 'resetPassword'>('login')
 </script>
 
 <template>
-  <div class="bg-banner" />
-  <div class="absolute right-4 top-4 z-1 flex-center border rounded-lg bg-background p-1 text-base">
-    <ColorScheme v-if="settingsStore.settings.toolbar.colorScheme" />
-  </div>
-  <div class="login-box">
-    <div class="login-banner">
-      <img src="@/assets/images/logo.svg" class="absolute inset-s-4 inset-t-4 h-8 rounded">
-      <img src="@/assets/images/login-banner.png" class="banner">
+  <div class="login-page">
+    <div class="login-page__background" />
+    <div class="login-page__shell">
+      <section class="login-page__brand">
+        <img src="@/assets/images/logo.svg" alt="公文写作系统" class="login-page__logo">
+        <div class="login-page__brand-copy">
+          <p class="login-page__eyebrow">
+            写作工作台
+          </p>
+          <h1 class="login-page__title">
+            公文写作系统
+          </h1>
+          <p class="login-page__description">
+            统一管理账户、权限、素材、书籍学习与会话式写作工作流。
+          </p>
+        </div>
+        <img src="@/assets/images/login-banner.png" alt="登录插图" class="login-page__illustration">
+      </section>
+
+      <section class="login-page__form-panel">
+        <Transition name="fade" mode="out-in">
+          <LoginForm
+            v-if="formType === 'login'"
+            :account="account"
+            @on-login="router.push(redirect)"
+            @on-register="(value) => { formType = 'register'; account = value }"
+            @on-reset-password="(value) => { formType = 'resetPassword'; account = value }"
+          />
+          <RegisterForm
+            v-else-if="formType === 'register'"
+            :account="account"
+            @on-register="(value) => { formType = 'login'; account = value }"
+            @on-login="formType = 'login'"
+          />
+          <ResetPasswordForm
+            v-else
+            :account="account"
+            @on-reset-password="(value) => { formType = 'login'; account = value }"
+            @on-login="formType = 'login'"
+          />
+        </Transition>
+      </section>
     </div>
-    <div class="login-form flex-col-center">
-      <Transition name="fade" mode="out-in">
-        <LoginForm
-          v-if="formType === 'login'"
-          :account
-          @on-login="router.push(redirect)"
-          @on-register="(val) => { formType = 'register'; account = val }"
-          @on-reset-password="(val) => { formType = 'resetPassword'; account = val }"
-        />
-        <RegisterForm
-          v-else-if="formType === 'register'"
-          :account
-          @on-register="(val) => { formType = 'login'; account = val }"
-          @on-login="formType = 'login'"
-        />
-        <ResetPasswordForm
-          v-else-if="formType === 'resetPassword'"
-          :account
-          @on-reset-password="(val) => { formType = 'login'; account = val }"
-          @on-login="formType = 'login'"
-        />
-      </Transition>
-    </div>
+    <FaCopyright class="login-page__copyright" />
   </div>
-  <FaCopyright class="copyright" />
 </template>
 
 <style scoped>
-.bg-banner {
-  position: fixed;
-  z-index: 0;
-  width: 100%;
-  height: 100%;
-  background:
-    radial-gradient(closest-side, hsl(var(--border) / 10%) 30%, hsl(var(--primary) / 20%) 30%, hsl(var(--border) / 30%) 50%) no-repeat,
-    radial-gradient(closest-side, hsl(var(--border) / 10%) 30%, hsl(var(--primary) / 20%) 30%, hsl(var(--border) / 30%) 50%) no-repeat;
-  background-position: 100% 100%, 0% 0%;
-  background-size: 200vw 200vh;
-  filter: blur(100px);
-}
-
-[data-mode="mobile"] {
-  .login-box {
-    position: relative;
-    flex-direction: column;
-    justify-content: start;
-    width: 100%;
-
-    .login-banner {
-      width: 100%;
-      padding: 20px 0;
-
-      .banner {
-        position: relative;
-        top: inherit;
-        right: inherit;
-        display: inherit;
-        width: 100%;
-        max-width: 375px;
-        margin: 0 auto;
-        transform: translateY(0);
-      }
-    }
-
-    .login-form {
-      width: 100%;
-    }
-  }
-
-  .copyright {
-    position: relative;
-  }
-}
-
-.login-box {
-  position: absolute;
+.login-page {
+  position: relative;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 32px;
   overflow: hidden;
-  background-color: hsl(var(--background));
-
-  [data-mode="pc"] & {
-    --uno: shadow-md rounded-md;
-
-    top: 50%;
-    left: 50%;
-    transform: translateX(-50%) translateY(-50%);
-  }
-
-  .login-banner {
-    --uno: bg-muted dark:bg-muted/30;
-
-    position: relative;
-    width: 450px;
-    overflow: hidden;
-
-    &::before {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      content: "";
-      background:
-        radial-gradient(closest-side, hsl(var(--border) / 10%) 30%, hsl(var(--primary) / 20%) 30%, hsl(var(--border) / 30%) 50%) no-repeat,
-        radial-gradient(closest-side, hsl(var(--border) / 10%) 30%, hsl(var(--primary) / 20%) 30%, hsl(var(--border) / 30%) 50%) no-repeat;
-      background-position: 100% 100%, 0% 0%;
-      background-size: 200vw 200vh;
-      filter: blur(100px);
-    }
-
-    .banner {
-      position: absolute;
-      top: 50%;
-      width: 100%;
-      transform: translateY(-50%);
-    }
-  }
-
-  .login-form {
-    width: 500px;
-    transition: height 0.15s ease;
-  }
+  background: var(--w-login-page-bg);
 }
 
-.copyright {
+.login-page__background {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top left, var(--w-login-page-glow-1), transparent 35%),
+    radial-gradient(circle at bottom right, var(--w-login-page-glow-2), transparent 32%),
+    linear-gradient(180deg, var(--w-login-page-gradient-start) 0%, var(--w-login-page-gradient-end) 100%);
+}
+
+.login-page__shell {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(320px, 1.1fr) minmax(360px, 0.9fr);
+  width: min(1180px, 100%);
+  overflow: hidden;
+  background: var(--w-login-shell-bg);
+  border: 1px solid var(--w-login-shell-border);
+  border-radius: 24px;
+  box-shadow: var(--w-login-shell-shadow);
+}
+
+.login-page__brand {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  justify-content: space-between;
+  padding: 32px;
+  color: var(--w-login-brand-text);
+  background: var(--w-login-brand-bg);
+}
+
+.login-page__logo {
+  width: 44px;
+  height: 44px;
+}
+
+.login-page__eyebrow {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--w-login-brand-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.login-page__title {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.15;
+}
+
+.login-page__description {
+  max-width: 440px;
+  margin: 16px 0 0;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--w-login-brand-secondary);
+}
+
+.login-page__illustration {
+  align-self: center;
+  width: min(100%, 520px);
+}
+
+.login-page__form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: var(--w-login-panel-bg);
+}
+
+.login-page__copyright {
   position: absolute;
   bottom: 0;
+  z-index: 1;
   width: 100%;
-  padding: 20px;
+  padding: 16px 24px;
   margin: 0;
 }
 
@@ -173,5 +173,24 @@ const formType = ref<'login' | 'register' | 'resetPassword'>('login')
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+@media (max-width: 960px) {
+  .login-page {
+    padding: 16px;
+  }
+
+  .login-page__shell {
+    grid-template-columns: 1fr;
+  }
+
+  .login-page__brand,
+  .login-page__form-panel {
+    padding: 24px;
+  }
+
+  .login-page__illustration {
+    max-width: 360px;
+  }
 }
 </style>

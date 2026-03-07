@@ -1,141 +1,16 @@
-<template>
-  <div class="book-learning">
-    <div class="page-header">
-      <div class="title-wrap">
-        <h2 class="page-title">书籍学习</h2>
-        <p class="page-subtitle">扫描并导入 `data/book` 的 EPUB / PDF，提炼写作规则进入知识库。</p>
-      </div>
-      <div class="actions">
-        <el-button :loading="scanning" @click="scanBooks">扫描书籍</el-button>
-        <el-button type="primary" :loading="startingImport" :disabled="!scanItems.length" @click="startImport">
-          开始学习
-        </el-button>
-      </div>
-    </div>
-
-    <div class="control-row">
-      <el-tag type="info">目录：{{ booksDir || '-' }}</el-tag>
-      <el-switch
-        v-model="rebuild"
-        active-text="重建模式（清空旧书籍知识）"
-        inactive-text="增量模式"
-      />
-    </div>
-
-    <el-card shadow="never" class="scan-card">
-      <template #header>
-        <div class="card-header">
-          <span>扫描结果（{{ scanItems.length }}）</span>
-          <el-checkbox
-            :model-value="allSelected"
-            :indeterminate="indeterminate"
-            @change="toggleSelectAll"
-          >
-            全选
-          </el-checkbox>
-        </div>
-      </template>
-      <el-table ref="scanTableRef" :data="scanItems" v-loading="scanning" @selection-change="onSelectionChange">
-        <el-table-column type="selection" width="48" />
-        <el-table-column prop="source_name" label="文件名" min-width="280" />
-        <el-table-column prop="file_ext" label="格式" width="90" />
-        <el-table-column label="大小" width="120">
-          <template #default="{ row }">{{ formatFileSize(row.file_size) }}</template>
-        </el-table-column>
-        <el-table-column label="导入状态" width="120">
-          <template #default="{ row }">
-            <el-tag size="small" :type="statusTagType(row.status)">
-              {{ row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="doc_type" label="文种" width="120" />
-        <el-table-column label="更新时间" width="180">
-          <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
-    <el-card v-if="task" shadow="never" class="task-card">
-      <template #header>
-        <div class="card-header">
-          <span>学习任务进度</span>
-          <el-tag size="small" :type="statusTagType(task.status)">{{ task.status }}</el-tag>
-        </div>
-      </template>
-      <div class="task-grid">
-        <div class="task-item">
-          <div class="task-label">当前阶段</div>
-          <div class="task-value">{{ task.stage }} {{ task.running_file ? `- ${task.running_file}` : '' }}</div>
-        </div>
-        <div class="task-item">
-          <div class="task-label">总体进度</div>
-          <el-progress :percentage="task.overall_progress" :stroke-width="8" />
-        </div>
-        <div class="task-item">
-          <div class="task-label">文件进度</div>
-          <el-progress :percentage="task.file_progress" :stroke-width="8" />
-          <div class="task-hint">{{ task.completed_files }}/{{ task.total_files }}</div>
-        </div>
-        <div class="task-item">
-          <div class="task-label">分片进度</div>
-          <el-progress :percentage="task.chunk_progress" :stroke-width="8" />
-          <div class="task-hint">{{ task.completed_chunks }}/{{ task.total_chunks }}</div>
-        </div>
-        <div class="task-item">
-          <div class="task-label">OCR统计</div>
-          <div class="task-value">文件 {{ task.ocr_used_files }} / 页数 {{ task.ocr_pages }}</div>
-        </div>
-      </div>
-      <el-table :data="task.file_results" size="small" class="result-table">
-        <el-table-column prop="source_name" label="文件" min-width="220" />
-        <el-table-column prop="status" label="状态" width="100" />
-        <el-table-column prop="chunk_count" label="分片" width="90" />
-        <el-table-column label="OCR" width="100">
-          <template #default="{ row }">{{ row.ocr_used ? `是(${row.ocr_pages})` : '否' }}</template>
-        </el-table-column>
-        <el-table-column prop="error_message" label="错误信息" min-width="200" show-overflow-tooltip />
-      </el-table>
-    </el-card>
-
-    <el-card shadow="never" class="source-card">
-      <template #header>
-        <div class="card-header">
-          <span>导入记录</span>
-          <el-button link @click="loadSources">刷新</el-button>
-        </div>
-      </template>
-      <el-table :data="sourceItems" v-loading="loadingSources">
-        <el-table-column prop="source_name" label="来源文件" min-width="220" />
-        <el-table-column prop="doc_type" label="主文种" width="120" />
-        <el-table-column prop="status" label="状态" width="100" />
-        <el-table-column prop="chunk_count" label="分片数" width="90" />
-        <el-table-column label="OCR" width="90">
-          <template #default="{ row }">{{ row.ocr_used ? '是' : '否' }}</template>
-        </el-table-column>
-        <el-table-column label="更新时间" width="180">
-          <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
-        </el-table-column>
-      </el-table>
-      <div class="pagination" v-if="sourceTotal > sourceLimit">
-        <el-pagination
-          v-model:current-page="sourcePage"
-          v-model:page-size="sourceLimit"
-          :total="sourceTotal"
-          layout="total, prev, pager, next"
-          @current-change="loadSources"
-        />
-      </div>
-    </el-card>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
-import apiBooks from '@/api/modules/books'
 import type { BookImportTask, BookScanItem, BookSourceRecord } from '@/types/writer'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import apiBooks from '@/api/modules/books'
+import ActionBar from '@/components/ActionBar/index.vue'
+import DataTableShell from '@/components/DataTableShell/index.vue'
+import EmptyState from '@/components/EmptyState/index.vue'
+import PageHeader from '@/components/PageHeader/index.vue'
+import PageShell from '@/components/PageShell/index.vue'
+import PanelCard from '@/components/PanelCard/index.vue'
+import StatusBadge from '@/components/StatusBadge/index.vue'
+import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
 
 const scanning = ref(false)
 const startingImport = ref(false)
@@ -159,26 +34,38 @@ const sourceLimit = ref(20)
 const allSelected = computed(() => scanItems.value.length > 0 && selectedRows.value.length === scanItems.value.length)
 const indeterminate = computed(() => selectedRows.value.length > 0 && selectedRows.value.length < scanItems.value.length)
 
-function statusTagType(status: string) {
-  if (status === 'completed') return 'success'
-  if (status === 'partial') return 'warning'
-  if (status === 'failed') return 'danger'
-  if (status === 'running') return 'primary'
-  return 'info'
+function statusTone(status: string): 'neutral' | 'success' | 'warning' | 'danger' {
+  if (status === 'completed') {
+    return 'success'
+  }
+  if (status === 'partial') {
+    return 'warning'
+  }
+  if (status === 'failed') {
+    return 'danger'
+  }
+  return 'neutral'
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return '-'
+  if (!value) {
+    return '-'
+  }
   return dayjs(value).tz(SHANGHAI_TZ).format('YYYY-MM-DD HH:mm:ss')
 }
 
 function formatFileSize(size: number) {
-  if (!size) return '0 B'
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  if (!size) {
+    return '0 B'
+  }
+  if (size < 1024) {
+    return `${size} B`
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`
+  }
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
-
 async function scanBooks() {
   scanning.value = true
   try {
@@ -188,9 +75,11 @@ async function scanBooks() {
     selectedRows.value = []
     await nextTick()
     scanTableRef.value?.clearSelection?.()
-  } catch {
+  }
+  catch {
     scanItems.value = []
-  } finally {
+  }
+  finally {
     scanning.value = false
   }
 }
@@ -226,7 +115,9 @@ function startPolling() {
 }
 
 async function pollTask() {
-  if (!currentTaskId.value) return
+  if (!currentTaskId.value) {
+    return
+  }
   try {
     const { data } = await apiBooks.getTask(currentTaskId.value)
     task.value = data
@@ -235,13 +126,16 @@ async function pollTask() {
       await Promise.all([scanBooks(), loadSources()])
       if (data.status === 'completed') {
         ElMessage.success('书籍学习完成')
-      } else if (data.status === 'partial') {
+      }
+      else if (data.status === 'partial') {
         ElMessage.warning('书籍学习部分完成，请查看失败项')
-      } else {
+      }
+      else {
         ElMessage.error(data.message || '书籍学习失败')
       }
     }
-  } catch {
+  }
+  catch {
     stopPolling()
   }
 }
@@ -263,7 +157,8 @@ async function startImport() {
           cancelButtonText: '取消',
         },
       )
-    } catch {
+    }
+    catch {
       return
     }
   }
@@ -301,9 +196,11 @@ async function startImport() {
     }
     startPolling()
     ElMessage.success('书籍学习任务已启动')
-  } catch {
+  }
+  catch {
     ElMessage.error('启动失败，请稍后重试')
-  } finally {
+  }
+  finally {
     startingImport.value = false
   }
 }
@@ -317,10 +214,12 @@ async function loadSources() {
     })
     sourceItems.value = data.items || []
     sourceTotal.value = data.total || 0
-  } catch {
+  }
+  catch {
     sourceItems.value = []
     sourceTotal.value = 0
-  } finally {
+  }
+  finally {
     loadingSources.value = false
   }
 }
@@ -334,121 +233,326 @@ onBeforeUnmount(() => {
 })
 </script>
 
+<template>
+  <PageShell>
+    <PageHeader
+      title="书籍学习"
+      subtitle="扫描并导入 data/book 目录中的 EPUB 与 PDF，提炼写作结构和风格规则进入知识库。"
+    >
+      <template #actions>
+        <el-button :loading="scanning" @click="scanBooks">
+          扫描目录
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="startingImport"
+          :disabled="!scanItems.length"
+          @click="startImport"
+        >
+          开始学习
+        </el-button>
+      </template>
+    </PageHeader>
+
+    <ActionBar>
+      <div class="book-learning__meta">
+        <span class="book-learning__meta-label">书籍目录</span>
+        <code class="book-learning__mono">{{ booksDir || '尚未扫描目录' }}</code>
+      </div>
+      <div class="book-learning__meta">
+        <span class="book-learning__meta-label">导入范围</span>
+        <span class="book-learning__meta-value">
+          {{ selectedRows.length ? `已选 ${selectedRows.length} 本` : `默认导入全部 ${scanItems.length} 本` }}
+        </span>
+      </div>
+      <el-switch
+        v-model="rebuild"
+        active-text="重建模式"
+        inactive-text="增量模式"
+      />
+    </ActionBar>
+
+    <PanelCard
+      title="扫描结果"
+      subtitle="扫描结果只展示书籍源文件，不会进入素材管理列表。"
+    >
+      <template #actions>
+        <el-checkbox
+          :model-value="allSelected"
+          :indeterminate="indeterminate"
+          @change="toggleSelectAll"
+        >
+          全选
+        </el-checkbox>
+      </template>
+
+      <DataTableShell>
+        <el-table ref="scanTableRef" v-loading="scanning" :data="scanItems" @selection-change="onSelectionChange">
+          <template #empty>
+            <EmptyState
+              icon="i-ep:reading"
+              title="还没有扫描到可学习的书籍"
+              description="请先把 EPUB 或 PDF 放入 data/book 目录，再点击“扫描目录”。"
+            />
+          </template>
+
+          <el-table-column type="selection" width="48" />
+          <el-table-column prop="source_name" label="文件名" min-width="280" show-overflow-tooltip />
+          <el-table-column prop="file_ext" label="格式" width="90" />
+          <el-table-column label="大小" width="120">
+            <template #default="{ row }">
+              {{ formatFileSize(row.file_size) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="导入状态" width="120">
+            <template #default="{ row }">
+              <StatusBadge :label="row.status" :tone="statusTone(row.status)" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="doc_type" label="主文种" min-width="140" show-overflow-tooltip />
+          <el-table-column label="更新时间" width="190">
+            <template #default="{ row }">
+              {{ formatDate(row.updated_at) }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </DataTableShell>
+    </PanelCard>
+
+    <PanelCard
+      v-if="task"
+      title="学习任务"
+      subtitle="展示当前导入任务的阶段、进度与 OCR 使用情况。"
+    >
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-card__label">
+            当前阶段
+          </div>
+          <div class="metric-card__value metric-card__value--text">
+            {{ task.stage }}
+          </div>
+          <div class="metric-card__meta">
+            {{ task.running_file || '等待调度文件' }}
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-card__label">
+            总体进度
+          </div>
+          <div class="metric-card__value">
+            {{ task.overall_progress }}%
+          </div>
+          <div class="metric-card__meta">
+            {{ task.message || '任务进行中' }}
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-card__label">
+            文件完成
+          </div>
+          <div class="metric-card__value">
+            {{ task.completed_files }}/{{ task.total_files }}
+          </div>
+          <div class="metric-card__meta">
+            失败 {{ task.failed_files }} · 部分完成 {{ task.partial_files }}
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-card__label">
+            OCR 统计
+          </div>
+          <div class="metric-card__value">
+            {{ task.ocr_used_files }}
+          </div>
+          <div class="metric-card__meta">
+            累计识别 {{ task.ocr_pages }} 页
+          </div>
+        </div>
+      </div>
+
+      <div class="book-learning__progress-grid">
+        <div class="book-learning__progress-card">
+          <div class="book-learning__progress-label">
+            总体进度
+          </div>
+          <el-progress :percentage="task.overall_progress" :stroke-width="8" />
+        </div>
+        <div class="book-learning__progress-card">
+          <div class="book-learning__progress-label">
+            文件进度
+          </div>
+          <el-progress :percentage="task.file_progress" :stroke-width="8" />
+          <div class="book-learning__progress-meta">
+            {{ task.completed_files }}/{{ task.total_files }}
+          </div>
+        </div>
+        <div class="book-learning__progress-card">
+          <div class="book-learning__progress-label">
+            分片进度
+          </div>
+          <el-progress :percentage="task.chunk_progress" :stroke-width="8" />
+          <div class="book-learning__progress-meta">
+            {{ task.completed_chunks }}/{{ task.total_chunks }}
+          </div>
+        </div>
+      </div>
+
+      <DataTableShell class="book-learning__table-shell">
+        <el-table :data="task.file_results" size="small">
+          <template #empty>
+            <EmptyState title="任务尚未产生文件结果" description="任务启动后会在这里滚动展示各文件学习结果。" />
+          </template>
+
+          <el-table-column prop="source_name" label="文件" min-width="220" show-overflow-tooltip />
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }">
+              <StatusBadge :label="row.status" :tone="statusTone(row.status)" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="chunk_count" label="分片数" width="100" align="right" />
+          <el-table-column label="OCR" width="120">
+            <template #default="{ row }">
+              {{ row.ocr_used ? `是（${row.ocr_pages} 页）` : '否' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="error_message" label="错误信息" min-width="220" show-overflow-tooltip />
+        </el-table>
+      </DataTableShell>
+    </PanelCard>
+
+    <PanelCard
+      title="导入记录"
+      subtitle="历史导入记录仅作为知识库来源管理，不会出现在素材管理页。"
+    >
+      <template #actions>
+        <el-button :loading="loadingSources" @click="loadSources">
+          刷新记录
+        </el-button>
+      </template>
+
+      <DataTableShell>
+        <el-table v-loading="loadingSources" :data="sourceItems">
+          <template #empty>
+            <EmptyState
+              icon="i-ep:collection"
+              title="还没有书籍学习记录"
+              description="完成一次书籍学习后，这里会展示来源文件、主文种和 OCR 使用情况。"
+            />
+          </template>
+
+          <el-table-column prop="source_name" label="来源文件" min-width="220" show-overflow-tooltip />
+          <el-table-column prop="doc_type" label="主文种" min-width="140" show-overflow-tooltip />
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }">
+              <StatusBadge :label="row.status" :tone="statusTone(row.status)" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="chunk_count" label="分片数" width="100" align="right" />
+          <el-table-column label="OCR" width="90">
+            <template #default="{ row }">
+              {{ row.ocr_used ? '是' : '否' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="更新时间" width="190">
+            <template #default="{ row }">
+              {{ formatDate(row.updated_at) }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </DataTableShell>
+
+      <div v-if="sourceTotal > sourceLimit" class="table-pagination">
+        <el-pagination
+          v-model:current-page="sourcePage"
+          v-model:page-size="sourceLimit"
+          :total="sourceTotal"
+          layout="total, prev, pager, next"
+          @current-change="loadSources"
+        />
+      </div>
+    </PanelCard>
+  </PageShell>
+</template>
+
 <style scoped>
-.book-learning {
-  padding: 24px;
-  color: var(--w-color-black);
-  background: linear-gradient(180deg, var(--w-color-white) 0%, var(--w-gray-50) 100%);
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.page-subtitle {
-  margin: 0;
-  color: var(--w-gray-600);
-  font-size: 13px;
-}
-
-.actions {
+.book-learning__meta {
   display: flex;
   gap: 8px;
-}
-
-.control-row {
-  display: flex;
-  gap: 12px;
   align-items: center;
-  margin-bottom: 16px;
+  min-width: 0;
 }
 
-.scan-card,
-.task-card,
-.source-card {
-  border-radius: var(--w-radius-md);
-  margin-bottom: 16px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.task-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.task-item {
-  border: 1px solid var(--w-gray-200);
-  background: var(--w-color-white);
-  border-radius: var(--w-radius-md);
-  padding: 10px 12px;
-}
-
-.task-label {
+.book-learning__meta-label {
   font-size: 12px;
-  color: var(--w-gray-600);
-  margin-bottom: 4px;
+  color: var(--w-text-tertiary);
+  white-space: nowrap;
 }
 
-.task-value {
-  color: var(--w-color-black);
+.book-learning__meta-value {
   font-size: 13px;
-  font-weight: 500;
+  color: var(--w-text-secondary);
 }
 
-.task-hint {
-  margin-top: 4px;
-  color: var(--w-gray-600);
+.book-learning__mono {
+  max-width: 100%;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--w-text-primary);
+  white-space: nowrap;
+  background: var(--w-gray-100);
+  border-radius: var(--w-radius-sm);
+}
+
+.book-learning__progress-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.book-learning__progress-card {
+  padding: 14px;
+  background: var(--w-gray-50);
+  border: 1px solid var(--w-divider);
+  border-radius: var(--w-radius-md);
+}
+
+.book-learning__progress-label {
+  margin-bottom: 10px;
   font-size: 12px;
+  color: var(--w-text-secondary);
 }
 
-.result-table {
-  margin-top: 10px;
+.book-learning__progress-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--w-text-tertiary);
 }
 
-.pagination {
-  margin-top: 14px;
+.metric-card__value--text {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.book-learning__table-shell {
+  margin-top: 16px;
+}
+
+.table-pagination {
   display: flex;
   justify-content: flex-end;
+  margin-top: 16px;
 }
 
 @media (max-width: 900px) {
-  .book-learning {
-    padding: 16px;
-  }
-
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .actions {
-    justify-content: flex-end;
-  }
-
-  .task-grid {
+  .book-learning__progress-grid {
     grid-template-columns: 1fr;
+  }
+
+  .book-learning__meta {
+    width: 100%;
   }
 }
 </style>

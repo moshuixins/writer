@@ -202,5 +202,3 @@ export const useMenuStore = defineStore(
     }
   },
 )
-
-

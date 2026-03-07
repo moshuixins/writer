@@ -13,6 +13,10 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AccountButton: typeof import('./../components/AccountButton/index.vue')['default']
+    ActionBar: typeof import('./../components/ActionBar/index.vue')['default']
+    AppUserMenu: typeof import('./../components/AppUserMenu/index.vue')['default']
+    DataTableShell: typeof import('./../components/DataTableShell/index.vue')['default']
+    EmptyState: typeof import('./../components/EmptyState/index.vue')['default']
     FaAuth: typeof import('./../ui/components/FaAuth/index.vue')['default']
     FaAvatar: typeof import('./../ui/components/FaAvatar/index.vue')['default']
     FaBackToTop: typeof import('./../ui/components/FaBackToTop/index.vue')['default']
@@ -54,14 +58,22 @@ declare module 'vue' {
     FaTextarea: typeof import('./../ui/components/FaTextarea/index.vue')['default']
     FaToast: typeof import('./../ui/components/FaToast/index.vue')['default']
     FaTooltip: typeof import('./../ui/components/FaTooltip/index.vue')['default']
+    PageHeader: typeof import('./../components/PageHeader/index.vue')['default']
+    PageShell: typeof import('./../components/PageShell/index.vue')['default']
+    PanelCard: typeof import('./../components/PanelCard/index.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    StatusBadge: typeof import('./../components/StatusBadge/index.vue')['default']
   }
 }
 
 // For TSX support
 declare global {
   const AccountButton: typeof import('./../components/AccountButton/index.vue')['default']
+  const ActionBar: typeof import('./../components/ActionBar/index.vue')['default']
+  const AppUserMenu: typeof import('./../components/AppUserMenu/index.vue')['default']
+  const DataTableShell: typeof import('./../components/DataTableShell/index.vue')['default']
+  const EmptyState: typeof import('./../components/EmptyState/index.vue')['default']
   const FaAuth: typeof import('./../ui/components/FaAuth/index.vue')['default']
   const FaAvatar: typeof import('./../ui/components/FaAvatar/index.vue')['default']
   const FaBackToTop: typeof import('./../ui/components/FaBackToTop/index.vue')['default']
@@ -103,6 +115,10 @@ declare global {
   const FaTextarea: typeof import('./../ui/components/FaTextarea/index.vue')['default']
   const FaToast: typeof import('./../ui/components/FaToast/index.vue')['default']
   const FaTooltip: typeof import('./../ui/components/FaTooltip/index.vue')['default']
+  const PageHeader: typeof import('./../components/PageHeader/index.vue')['default']
+  const PageShell: typeof import('./../components/PageShell/index.vue')['default']
+  const PanelCard: typeof import('./../components/PanelCard/index.vue')['default']
   const RouterLink: typeof import('vue-router')['RouterLink']
   const RouterView: typeof import('vue-router')['RouterView']
+  const StatusBadge: typeof import('./../components/StatusBadge/index.vue')['default']
 }

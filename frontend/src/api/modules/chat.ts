@@ -1,6 +1,6 @@
-import api from '../index'
 import type { AxiosRequestConfig } from 'axios'
 import type { ChatMessage, ChatSession, SaveDraftPayload, SessionDraftResponse } from '@/types/writer'
+import api from '../index'
 
 export default {
   getSessions: () => api.get<ChatSession[]>('/api/chat/sessions'),

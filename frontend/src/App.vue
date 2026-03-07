@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted, watch } from 'vue'
 import { ua } from '@/utils/ua'
 import Provider from './ui/provider/index.vue'
 
@@ -15,28 +16,33 @@ const isAuth = computed(() => {
   })
 })
 
-// 设置网页 title
+function syncViewportMode() {
+  settingsStore.setMode(document.documentElement.clientWidth)
+}
+
 watch([
   () => settingsStore.settings.app.enableDynamicTitle,
   () => settingsStore.title,
 ], () => {
+  const appTitle = import.meta.env.VITE_APP_TITLE || '公文写作系统'
   if (settingsStore.settings.app.enableDynamicTitle && settingsStore.title) {
     const title = typeof settingsStore.title === 'function' ? settingsStore.title() : settingsStore.title
-    document.title = `${title} - ${import.meta.env.VITE_APP_TITLE}`
+    document.title = `${title} - ${appTitle}`
+    return
   }
-  else {
-    document.title = import.meta.env.VITE_APP_TITLE
-  }
+  document.title = appTitle
 }, {
   immediate: true,
   deep: true,
 })
 
 onMounted(() => {
-  settingsStore.setMode(document.documentElement.clientWidth)
-  window.addEventListener('resize', () => {
-    settingsStore.setMode(document.documentElement.clientWidth)
-  })
+  syncViewportMode()
+  window.addEventListener('resize', syncViewportMode)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncViewportMode)
 })
 </script>
 

@@ -2,6 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { Icon } from '@iconify/vue'
 import { UseImage } from '@vueuse/components'
+import { ensureOfflineIconCollection, isOfflineIconEnabled, isOfflineIconReady } from '@/iconify'
 import { cn } from '@/utils'
 
 defineOptions({
@@ -12,6 +13,8 @@ const props = defineProps<{
   name: string
   class?: HTMLAttributes['class']
 }>()
+
+const iconifyReady = ref(true)
 
 const outputType = computed(() => {
   const hasPathFeatures = (str: string) => {
@@ -30,12 +33,36 @@ const outputType = computed(() => {
     return 'svg'
   }
 })
+
+watch(() => [props.name, outputType.value] as const, async ([name, type]) => {
+  if (type !== 'iconify') {
+    iconifyReady.value = true
+    return
+  }
+
+  if (!isOfflineIconEnabled() || isOfflineIconReady(name)) {
+    iconifyReady.value = true
+    return
+  }
+
+  iconifyReady.value = false
+  try {
+    await ensureOfflineIconCollection(name)
+  }
+  catch (error) {
+    console.warn(`[FaIcon] Failed to load offline icon collection for ${name}`, error)
+  }
+  finally {
+    iconifyReady.value = true
+  }
+}, { immediate: true })
 </script>
 
 <template>
   <i :class="cn('relative size-[1em] flex-inline items-center justify-center fill-current leading-[1em]', props.class)">
     <i v-if="outputType === 'unocss'" class="size-inherit shrink-0" :class="name" />
-    <Icon v-else-if="outputType === 'iconify'" :icon="name" class="shrink-0 size-inherit!" />
+    <Icon v-else-if="outputType === 'iconify' && iconifyReady" :icon="name" class="shrink-0 size-inherit!" />
+    <span v-else-if="outputType === 'iconify'" class="size-inherit shrink-0" aria-hidden="true" />
     <svg v-else-if="outputType === 'svg'" class="size-inherit shrink-0" aria-hidden="true">
       <use :xlink:href="`#icon-${name}`" />
     </svg>

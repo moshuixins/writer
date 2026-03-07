@@ -1,8 +1,8 @@
 import type { Router, RouteRecordRaw } from 'vue-router'
 import { useNProgress } from '@vueuse/integrations/useNProgress'
+import { findFirstAccessibleChildRoute } from '@/utils/permission'
 import { asyncRoutes, asyncRoutesByFilesystem } from './routes'
 import '@/assets/styles/nprogress.css'
-import { findFirstAccessibleChildRoute } from '@/utils/permission'
 
 function setupRoutes(router: Router) {
   router.beforeEach(async (to, _from, next) => {
@@ -225,4 +225,3 @@ export default function setupGuards(router: Router) {
   setupKeepAlive(router)
   setupOther(router)
 }
-

@@ -1,62 +1,97 @@
-/* 页面布局 CSS 变量 */
+/* Global design tokens */
 :root {
   color-scheme: light;
+
   --w-color-black: #0d0d0d;
-  --w-color-white: #ffffff;
+  --w-color-white: #fff;
   --w-gray-900: #1f1f1f;
   --w-gray-800: #2f2f2f;
-  --w-gray-700: #444444;
+  --w-gray-700: #444;
   --w-gray-600: #5f5f5f;
-  --w-gray-500: #777777;
+  --w-gray-500: #777;
   --w-gray-400: #9a9a9a;
-  --w-gray-300: #cccccc;
+  --w-gray-300: #ccc;
   --w-gray-200: #e8e8e8;
   --w-gray-100: #f5f5f5;
   --w-gray-50: #fafafa;
+
   --w-radius-sm: 6px;
   --w-radius-md: 8px;
   --w-radius-lg: 10px;
   --w-shadow-xs: 0 2px 8px rgb(0 0 0 / 4%);
   --w-shadow-sm: 0 6px 14px rgb(0 0 0 / 8%);
   --w-shadow-md: 0 10px 24px rgb(0 0 0 / 14%);
+
+  --w-page-bg: linear-gradient(180deg, var(--w-color-white) 0%, var(--w-gray-50) 100%);
+  --w-panel-bg: var(--w-color-white);
+  --w-panel-border: var(--w-gray-200);
+  --w-divider: var(--w-gray-200);
+  --w-text-primary: var(--w-color-black);
+  --w-text-secondary: var(--w-gray-600);
+  --w-text-tertiary: var(--w-gray-500);
+  --w-icon-muted: var(--w-gray-300);
+  --w-focus-ring: 0 0 0 3px rgb(13 13 13 / 12%);
+  --w-overlay: rgb(13 13 13 / 34%);
+  --w-shell-bg: #f3f2ee;
+  --w-shell-sidebar-bg: #121212;
+  --w-shell-sidebar-card: rgb(255 255 255 / 5%);
+  --w-shell-sidebar-border: rgb(255 255 255 / 10%);
+  --w-shell-sidebar-text: rgb(255 255 255 / 88%);
+  --w-shell-sidebar-muted: rgb(255 255 255 / 56%);
+  --w-shell-sidebar-glow: rgb(255 255 255 / 7%);
+  --w-shell-sidebar-active-bg: #fff;
+  --w-shell-sidebar-active-text: #111;
+  --w-shell-topbar-bg: rgb(255 255 255 / 82%);
+  --w-shell-topbar-border: rgb(17 17 17 / 6%);
+  --w-shell-canvas-bg: transparent;
+  --w-panel-frosted-bg: rgb(255 255 255 / 78%);
+  --w-table-header-bg: #f7f6f3;
+  --w-table-row-hover-bg: #faf9f7;
+  --w-data-shell-bg: var(--w-color-white);
+  --w-data-shell-border: var(--w-gray-200);
+  --w-state-success-bg: #f2f6f2;
+  --w-state-success-text: #274c2e;
+  --w-state-warning-bg: #faf4e8;
+  --w-state-warning-text: #7b5520;
+  --w-state-danger-bg: #f9ecec;
+  --w-state-danger-text: #7e2727;
+  --w-state-neutral-bg: var(--w-gray-100);
+  --w-state-neutral-text: var(--w-gray-700);
+  --w-workflow-running: #8a6d1f;
+  --w-workflow-done: #2e6b3e;
+  --w-workflow-error: #8c2f2f;
+  --w-message-user-bg: #f7f5f0;
+
   --w-btn-primary-bg: var(--w-color-black);
   --w-btn-primary-text: var(--w-color-white);
   --w-btn-primary-hover-bg: var(--w-gray-900);
-  --w-btn-primary-active-bg: #000000;
+  --w-btn-primary-active-bg: #000;
   --w-btn-secondary-bg: var(--w-color-white);
   --w-btn-secondary-text: var(--w-color-black);
   --w-btn-secondary-border: var(--w-color-black);
   --w-btn-secondary-hover-bg: var(--w-gray-100);
   --w-btn-secondary-active-bg: #ebebeb;
 
-  /* 头部高度 */
+  --w-login-page-bg: #f2f0ea;
+  --w-login-page-glow-1: rgb(0 0 0 / 7%);
+  --w-login-page-glow-2: rgb(0 0 0 / 8%);
+  --w-login-page-gradient-start: #faf9f6;
+  --w-login-page-gradient-end: #efede7;
+  --w-login-shell-bg: rgb(255 255 255 / 90%);
+  --w-login-shell-border: rgb(0 0 0 / 8%);
+  --w-login-shell-shadow: 0 24px 60px rgb(0 0 0 / 10%);
+  --w-login-brand-bg: linear-gradient(160deg, #0f0f0f 0%, #2b2b2b 100%);
+  --w-login-brand-text: var(--w-color-white);
+  --w-login-brand-muted: rgb(255 255 255 / 68%);
+  --w-login-brand-secondary: rgb(255 255 255 / 78%);
+  --w-login-panel-bg: rgb(255 255 255 / 92%);
+
+  --w-sidebar-width: 280px;
+  --w-topbar-height: 78px;
   --g-header-height: 60px;
-
-  /* 侧边栏宽度 */
-  --g-main-sidebar-width: 80px;
-  --g-sub-sidebar-width: 220px;
-  --g-sub-sidebar-collapse-width: 64px;
-
-  /* 侧边栏 Logo 区域高度 */
-  --g-sidebar-logo-height: 50px;
-
-  /* 标签栏高度 */
-  --g-tabbar-height: 50px;
-
-  /* 工具栏高度 */
-  --g-toolbar-height: 50px;
-
-  /* 滚动条颜色 */
   --scrollbar-color: 240 5.9% 90%;
-
-  &.dark {
-    color-scheme: dark;
-
-    --scrollbar-color: 240 3.7% 15.9%;
-  }
 }
 
-/* 明暗模式 CSS 变量 */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   mix-blend-mode: normal;
@@ -71,16 +106,6 @@
   z-index: 1;
 }
 
-.dark {
-  &::view-transition-old(root) {
-    z-index: 1;
-  }
-
-  &::view-transition-new(root) {
-    z-index: 0;
-  }
-}
-
 * {
   scrollbar-color: hsl(var(--scrollbar-color)) transparent;
   scrollbar-width: thin;
@@ -93,23 +118,39 @@
 }
 
 html,
-body {
+body,
+#app {
   height: 100%;
 }
 
 body {
   box-sizing: border-box;
   margin: 0;
+  color: var(--w-text-primary);
+  background: var(--w-shell-bg);
   -webkit-tap-highlight-color: transparent;
 }
 
-#app {
-  height: 100%;
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
 
-/* textarea 字体跟随系统 */
 textarea {
   font-family: inherit;
+}
+
+.el-button {
+  font-weight: 500;
+}
+
+.el-button:focus-visible,
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: var(--w-focus-ring);
 }
 
 .el-button--primary {

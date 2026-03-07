@@ -10,10 +10,8 @@ export default {
   ],
   rules: {
     'at-rule-no-unknown': null,
-    'no-descending-specificity': null,
-    'property-no-unknown': null,
+    'custom-property-empty-line-before': null,
     'font-family-no-missing-generic-family-keyword': null,
-    'selector-class-pattern': null,
     'function-no-unknown': [
       true,
       {
@@ -25,6 +23,22 @@ export default {
         ],
       },
     ],
+    'media-feature-range-notation': null,
+    'no-descending-specificity': null,
+    'property-no-unknown': null,
+    'scss/double-slash-comment-empty-line-before': null,
+    'scss/no-global-function-names': null,
+    'selector-class-pattern': null,
+    'selector-pseudo-class-no-unknown': [
+      true,
+      {
+        ignorePseudoClasses: [
+          'deep',
+          'global',
+          'slotted',
+        ],
+      },
+    ],
     'selector-pseudo-element-no-unknown': [
       true,
       {
@@ -33,15 +47,13 @@ export default {
         ],
       },
     ],
-    'scss/double-slash-comment-empty-line-before': null,
-    'scss/no-global-function-names': null,
-    '@stylistic/max-line-length': null,
     '@stylistic/block-closing-brace-newline-after': [
       'always',
       {
         ignoreAtRules: ['if', 'else'],
       },
     ],
+    '@stylistic/max-line-length': null,
   },
   allowEmptyInput: true,
   ignoreFiles: [

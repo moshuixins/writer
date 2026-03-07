@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
+import { businessNavGroups } from '../src/layouts/navigation'
 import adminRoutes from '../src/router/modules/admin'
 import { filterMenusByAuth, findFirstAccessibleChildRoute, hasAllPermissions, hasAnyPermission } from '../src/utils/permission'
 import { getAdminAccountsPermissionState, getAdminRolesPermissionState } from '../src/views/admin/permissionState'
@@ -25,19 +26,28 @@ function testAdminRoutePermissions() {
   })
 }
 
+function testAdminNavigationPermissions() {
+  const adminGroup = businessNavGroups.find(group => group.key === 'admin')
+  assert.ok(adminGroup, 'admin navigation group missing')
+  assert.ok(adminGroup?.items.length, 'admin navigation items missing')
+  adminGroup?.items.forEach((item) => {
+    assert.equal(item.auth, 'accounts:read', `admin nav item ${item.key} missing accounts:read auth`)
+  })
+}
+
 function testMenuFiltering() {
   const menus = [
     {
-      meta: { title: '管理后台' as const },
+      meta: { title: '系统管理' as const },
       children: [
         {
           path: '/admin/accounts',
-          meta: { title: '账户管理' as const, auth: 'accounts:read' },
+          meta: { title: '账户与用户' as const, auth: 'accounts:read' },
         },
       ],
     },
     {
-      meta: { title: '素材' as const },
+      meta: { title: '素材中心' as const },
       children: [
         {
           path: '/writer/materials',
@@ -49,7 +59,7 @@ function testMenuFiltering() {
 
   const noAdminMenus = filterMenusByAuth(menus, createAuth(['materials:read']))
   assert.equal(noAdminMenus.length, 1)
-  assert.equal(noAdminMenus[0].meta?.title, '素材')
+  assert.equal(noAdminMenus[0].meta?.title, '素材中心')
 
   const withAdminMenus = filterMenusByAuth(menus, createAuth(['materials:read', 'accounts:read']))
   assert.equal(withAdminMenus.length, 2)
@@ -116,37 +126,27 @@ function testAdminPermissionState() {
 
 function testAdminTemplateBindings() {
   const adminAccountsPath = fileURLToPath(new URL('../src/views/admin/AdminAccounts.vue', import.meta.url))
-  const adminAccountsListPath = fileURLToPath(new URL('../src/views/admin/components/AdminAccountsList.vue', import.meta.url))
-  const adminAccountUsersPath = fileURLToPath(new URL('../src/views/admin/components/AdminAccountUsersTab.vue', import.meta.url))
-  const adminAccountInvitesPath = fileURLToPath(new URL('../src/views/admin/components/AdminAccountInvitesTab.vue', import.meta.url))
   const adminRolesPath = fileURLToPath(new URL('../src/views/admin/AdminRoles.vue', import.meta.url))
   const adminAccountsSource = readFileSync(adminAccountsPath, 'utf8')
-  const adminAccountsListSource = readFileSync(adminAccountsListPath, 'utf8')
-  const adminAccountUsersSource = readFileSync(adminAccountUsersPath, 'utf8')
-  const adminAccountInvitesSource = readFileSync(adminAccountInvitesPath, 'utf8')
   const adminRolesSource = readFileSync(adminRolesPath, 'utf8')
 
-  assert.match(adminAccountsSource, /v-if="canCreateAccount" type="primary" @click="createDialogVisible = true"/)
-  assert.match(adminAccountsSource, /:can-toggle-account-status="canToggleAccountStatus"/)
-  assert.match(adminAccountsSource, /:can-edit-user-roles="canEditUserRoles"/)
-  assert.match(adminAccountsSource, /:can-rebind-users="canRebindUsers"/)
-  assert.match(adminAccountsSource, /:can-create-invite="canCreateInvite"/)
+  assert.match(adminAccountsSource, /v-if="canCreateAccount"[\s\S]*@click="createDialogVisible = true"/)
+  assert.match(adminAccountsSource, /v-if="canToggleAccountStatus" label="操作" width="110"/)
+  assert.match(adminAccountsSource, /:disabled="!canEditUserRoles \|\| !roleOptions\.length \|\| savingUserId === row\.id"/)
+  assert.match(adminAccountsSource, /v-if="canRebindUsers" label="操作" width="120"/)
+  assert.match(adminAccountsSource, /v-if="canCreateInvite" :disabled="!currentAccount" @click="openInviteDialog"/)
+  assert.match(adminAccountsSource, /v-if="canCreateInvite" label="操作" width="120"/)
 
-  assert.match(adminAccountsListSource, /v-if="canToggleAccountStatus" label="[^"]+" width="116"/)
-  assert.match(adminAccountUsersSource, /:disabled="!canEditUserRoles \|\| !roleOptions\.length \|\| savingUserId === row\.id"/)
-  assert.match(adminAccountUsersSource, /v-if="canRebindUsers" label="[^"]+" width="120"/)
-  assert.match(adminAccountInvitesSource, /v-if="canCreateInvite" type="primary" :disabled="!currentAccount" @click="emit\('open-invite'\)"/)
-
-  assert.match(adminRolesSource, /v-if="canWriteRoles" type="primary" :disabled="!selectedAccountId" @click="openCreateDialog"/)
-  assert.match(adminRolesSource, /v-if="canWriteRoles" size="small" :disabled="row\.is_system" @click="openEditDialog\(row\)"/)
-  assert.match(adminRolesSource, /v-if="canWriteRoles" size="small" type="danger" :disabled="row\.is_system" @click="removeRole\(row\)"/)
+  assert.match(adminRolesSource, /v-if="canWriteRoles"[\s\S]*@click="openCreateDialog"/)
+  assert.match(adminRolesSource, /v-if="canWriteRoles" text size="small" :disabled="row\.is_system" @click="openEditDialog\(row\)"/)
+  assert.match(adminRolesSource, /v-if="canWriteRoles" text size="small" :disabled="row\.is_system" @click="removeRole\(row\)"/)
   assert.match(adminRolesSource, /v-if="canWriteRoles" type="primary" :loading="submitting" @click="submitRole"/)
 }
-
 
 const tests = [
   ['permission helpers', testPermissionHelpers],
   ['admin route permissions', testAdminRoutePermissions],
+  ['admin navigation permissions', testAdminNavigationPermissions],
   ['menu filtering', testMenuFiltering],
   ['redirect guard selection', testRedirectGuardSelection],
   ['admin permission state', testAdminPermissionState],
@@ -159,4 +159,3 @@ for (const [name, test] of tests) {
 }
 
 console.log(`permission regression passed: ${tests.length} checks`)
-

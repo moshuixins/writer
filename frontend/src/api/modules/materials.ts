@@ -1,5 +1,5 @@
-import api from '../index'
 import type { Material, MaterialListParams, PagedResult } from '@/types/writer'
+import api from '../index'
 
 export default {
   list: (params: MaterialListParams) =>

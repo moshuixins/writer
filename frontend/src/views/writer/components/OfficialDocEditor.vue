@@ -1,47 +1,15 @@
-<template>
-  <div class="official-editor">
-    <div class="editor-head">
-      <div class="save-indicator" :class="{ saving }">
-        <span>{{ saveStatus }}</span>
-        <span v-if="lastSavedAt" class="saved-at">{{ lastSavedAt }}</span>
-      </div>
-      <div class="head-actions">
-        <el-button size="small" type="primary" plain :loading="saving" @click="emit('manual-save')">
-          手动保存
-        </el-button>
-        <el-button size="small" @click="emitQuoteSelection">
-          引用选中文本到对话
-        </el-button>
-      </div>
-    </div>
-
-    <div class="editor-surface">
-      <Editor
-        v-model="editorHtml"
-        model-events="change input undo redo"
-        license-key="gpl"
-        :init="editorInit"
-        class="tinymce-body"
-        @onInit="handleEditorInit"
-      />
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import Editor from '@tinymce/tinymce-vue'
 import type { Editor as TinyEditor } from 'tinymce'
+import type { WriterDraft } from '@/types/writer'
+import Editor from '@tinymce/tinymce-vue'
+import { ElMessage } from 'element-plus'
 import tinymce from 'tinymce'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import 'tinymce/icons/default'
 import 'tinymce/themes/silver'
 import 'tinymce/models/dom'
 import 'tinymce/skins/ui/oxide/skin.min.css'
 import 'tinymce/skins/content/default/content.min.css'
-import type { WriterDraft } from '@/types/writer'
-
-void tinymce
 
 const props = defineProps<{
   modelValue: WriterDraft
@@ -52,9 +20,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: WriterDraft): void
-  (e: 'manual-save'): void
-  (e: 'quote-selection', value: string): void
+  (e: 'manualSave'): void
+  (e: 'quoteSelection', value: string): void
 }>()
+
+void tinymce
 
 function defaultBodyJson() {
   return {
@@ -90,7 +60,7 @@ function escapeHtml(value: string): string {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+    .replaceAll('\'', '&#39;')
 }
 
 function normalizePlainText(text: string): string {
@@ -137,8 +107,8 @@ function pushTextNode(
 
   const lastMarks = Array.isArray(last.marks)
     ? (last.marks as Array<{ type?: string }>)
-      .filter(mark => mark?.type === 'bold' || mark?.type === 'underline')
-      .map(mark => ({ type: mark.type as 'bold' | 'underline' }))
+        .filter(mark => mark?.type === 'bold' || mark?.type === 'underline')
+        .map(mark => ({ type: mark.type as 'bold' | 'underline' }))
     : []
 
   if (marksSignature(lastMarks) === marksSignature(marks)) {
@@ -195,7 +165,8 @@ function parseInlineDom(
   let nextMarks = marks
   if (tag === 'strong' || tag === 'b') {
     nextMarks = withMark(nextMarks, 'bold')
-  } else if (tag === 'u') {
+  }
+  else if (tag === 'u') {
     nextMarks = withMark(nextMarks, 'underline')
   }
 
@@ -267,7 +238,8 @@ function inlineNodesToHtml(nodes: unknown): string {
         const markType = (mark as Record<string, unknown>).type
         if (markType === 'bold') {
           chunk = `<strong>${chunk}</strong>`
-        } else if (markType === 'underline') {
+        }
+        else if (markType === 'underline') {
           chunk = `<u>${chunk}</u>`
         }
       }
@@ -337,7 +309,8 @@ function htmlToBodyJson(html: string): Record<string, unknown> {
       const items = Array.from(element.querySelectorAll(':scope > li'))
       if (!items.length) {
         content.push({ type: 'paragraph' })
-      } else {
+      }
+      else {
         for (const item of items) {
           const inline = parseInlineChildren(item as HTMLElement)
           content.push({
@@ -484,7 +457,8 @@ watch(
         editorHtml.value = editor.getContent() || nextHtml
         applyingEditorContent.value = false
       }
-    } else {
+    }
+    else {
       editorHtml.value = nextHtml
     }
 
@@ -551,7 +525,7 @@ function emitQuoteSelection() {
     ElMessage.warning('请先在编辑器中选中文本')
     return
   }
-  emit('quote-selection', selectedText)
+  emit('quoteSelection', selectedText)
 }
 
 function focusEditor() {
@@ -571,13 +545,44 @@ onBeforeUnmount(() => {
       if (!editor.removed) {
         editor.destroy()
       }
-    } catch {
+    }
+    catch {
       // no-op
     }
   }
   editorInstance.value = null
 })
 </script>
+
+<template>
+  <div class="official-editor">
+    <div class="editor-head">
+      <div class="save-indicator" :class="{ saving }">
+        <span>{{ saveStatus }}</span>
+        <span v-if="lastSavedAt" class="saved-at">{{ lastSavedAt }}</span>
+      </div>
+      <div class="head-actions">
+        <el-button size="small" type="primary" plain :loading="saving" @click="emit('manualSave')">
+          手动保存
+        </el-button>
+        <el-button size="small" @click="emitQuoteSelection">
+          引用选中文本到对话
+        </el-button>
+      </div>
+    </div>
+
+    <div class="editor-surface">
+      <Editor
+        v-model="editorHtml"
+        model-events="change input undo redo"
+        license-key="gpl"
+        :init="editorInit"
+        class="tinymce-body"
+        @on-init="handleEditorInit"
+      />
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .official-editor {
@@ -592,15 +597,15 @@ onBeforeUnmount(() => {
 
 .editor-head {
   display: flex;
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
 }
 
 .save-indicator {
   display: inline-flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
@@ -622,10 +627,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+  background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-  background: var(--el-bg-color);
-  overflow: hidden;
 }
 
 .editor-surface :deep(.tox),
@@ -636,13 +641,13 @@ onBeforeUnmount(() => {
 }
 
 .editor-surface :deep(.tox-tinymce) {
+  display: flex;
+  visibility: visible !important;
+  flex-direction: column;
+  min-height: 0;
   border: none;
   border-radius: inherit;
   box-shadow: none;
-  visibility: visible !important;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
 }
 
 .editor-surface :deep(.tox-editor-container),
@@ -657,8 +662,8 @@ onBeforeUnmount(() => {
 }
 
 .editor-surface :deep(.tox .tox-editor-header) {
-  border-bottom: 1px solid var(--w-gray-200);
   background: var(--w-color-white);
+  border-bottom: 1px solid var(--w-gray-200);
 }
 
 .editor-surface :deep(.tox .tox-toolbar-overlord),
@@ -674,20 +679,20 @@ onBeforeUnmount(() => {
 }
 
 .editor-surface :deep(.tox .tox-toolbar__group:last-child) {
-  border-right: none;
-  margin-right: 0;
   padding-right: 0;
+  margin-right: 0;
+  border-right: none;
 }
 
 .editor-surface :deep(.tox .tox-tbtn) {
+  box-sizing: border-box;
   min-width: 32px;
   height: 32px;
   padding: 0 11px;
+  color: var(--w-btn-secondary-text);
+  background: var(--w-btn-secondary-bg);
   border: 1px solid var(--w-btn-secondary-border);
   border-radius: var(--el-border-radius-base);
-  background: var(--w-btn-secondary-bg);
-  color: var(--w-btn-secondary-text);
-  box-sizing: border-box;
   box-shadow: none;
 }
 
@@ -700,20 +705,20 @@ onBeforeUnmount(() => {
 }
 
 .editor-surface :deep(.tox .tox-tbtn:hover) {
+  color: var(--w-btn-secondary-text);
   background: var(--w-btn-secondary-hover-bg);
   border-color: var(--w-btn-secondary-border);
-  color: var(--w-btn-secondary-text);
 }
 
 .editor-surface :deep(.tox .tox-tbtn.tox-tbtn--enabled),
-.editor-surface :deep(.tox .tox-tbtn[aria-pressed='true']) {
+.editor-surface :deep(.tox .tox-tbtn[aria-pressed="true"]) {
+  color: var(--w-btn-secondary-text);
   background: var(--w-btn-secondary-active-bg);
   border-color: var(--w-btn-secondary-border);
-  color: var(--w-btn-secondary-text);
 }
 
 .editor-surface :deep(.tox .tox-tbtn svg) {
-  fill: currentColor;
+  fill: currentcolor;
 }
 
 @media (max-width: 900px) {

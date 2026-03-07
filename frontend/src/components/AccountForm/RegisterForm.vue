@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { toTypedSchema } from '@vee-validate/zod'
+import { ElMessage } from 'element-plus'
 import { useForm } from 'vee-validate'
 import * as z from 'zod'
-import { FormControl, FormDescription, FormField, FormItem, FormMessage } from '@/ui/shadcn/ui/form'
 import { useUserStore } from '@/store/modules/user'
-import { ElMessage } from 'element-plus'
+import { FormControl, FormDescription, FormField, FormItem, FormMessage } from '@/ui/shadcn/ui/form'
 
 defineOptions({
   name: 'RegisterForm',
@@ -51,9 +51,11 @@ const onSubmit = form.handleSubmit(async (values) => {
     })
     ElMessage.success('注册成功，请登录')
     emits('onRegister', values.account)
-  } catch (e: any) {
+  }
+  catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '注册失败')
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 })

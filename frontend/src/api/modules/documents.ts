@@ -1,5 +1,5 @@
-import api from '../index'
 import type { ExportDoc, ExportDocPayload, ExportEditorPayload, PagedResult } from '@/types/writer'
+import api from '../index'
 
 export default {
   exportDoc: (data: ExportDocPayload) =>

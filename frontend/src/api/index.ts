@@ -41,8 +41,12 @@ function buildErrorMessage(error: any): string {
   }
 
   const fallback = String(error.message || '')
-  if (fallback === 'Network Error') return '后端网络故障'
-  if (fallback.toLowerCase().includes('timeout')) return '接口请求超时'
+  if (fallback === 'Network Error') {
+    return '后端网络故障'
+  }
+  if (fallback.toLowerCase().includes('timeout')) {
+    return '接口请求超时'
+  }
   return '请求失败，请稍后重试'
 }
 
@@ -53,7 +57,8 @@ function handleError(error: any) {
 
   if (status === 401 && !isAuthEndpoint) {
     useUserStore().requestLogout()
-  } else if (!error.config?.skipErrorToast) {
+  }
+  else if (!error.config?.skipErrorToast) {
     toast.error('请求失败', {
       description: buildErrorMessage(error),
     })
@@ -80,4 +85,4 @@ api.interceptors.response.use(
   },
 )
 
-export default api
+export default api
