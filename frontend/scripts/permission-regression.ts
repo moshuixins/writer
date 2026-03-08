@@ -131,9 +131,11 @@ function testAdminTemplateBindings() {
   const adminRolesSource = readFileSync(adminRolesPath, 'utf8')
 
   assert.match(adminAccountsSource, /v-if="canCreateAccount"[\s\S]*@click="createDialogVisible = true"/)
-  assert.match(adminAccountsSource, /v-if="canToggleAccountStatus" label="操作" width="110"/)
-  assert.match(adminAccountsSource, /:disabled="!canEditUserRoles \|\| !roleOptions\.length \|\| savingUserId === row\.id"/)
-  assert.match(adminAccountsSource, /v-if="canRebindUsers" label="操作" width="120"/)
+  assert.match(adminAccountsSource, /v-if="canToggleAccountStatus" text size="small" @click\.stop="toggleStatus\(account\)"/)
+  assert.match(adminAccountsSource, /v-if="canEditUserRoles \|\| canRebindUsers" label="操作" width="120"/)
+  assert.match(adminAccountsSource, /v-if="canEditUserRoles"[\s\S]*:disabled="!roleOptions\.length"[\s\S]*@click="openRoleEditor\(row\)"/)
+  assert.match(adminAccountsSource, /v-if="canRebindUsers" text size="small" @click="openRebindDialog\(row\)"/)
+  assert.match(adminAccountsSource, /v-if="canEditUserRoles"[\s\S]*@click="submitRoleEditor"/)
   assert.match(adminAccountsSource, /v-if="canCreateInvite" :disabled="!currentAccount" @click="openInviteDialog"/)
   assert.match(adminAccountsSource, /v-if="canCreateInvite" label="操作" width="120"/)
 

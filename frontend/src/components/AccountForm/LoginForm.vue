@@ -96,16 +96,16 @@ const onSubmit = form.handleSubmit((values) => {
             </FormField>
           </div>
           <FaButton variant="link" class="h-auto p-0" type="button" @click="emits('onResetPassword', form.values.account)">
-            忘记密码了?
+            忘记密码了？
           </FaButton>
         </div>
         <FaButton :loading="loading" size="lg" class="w-full" type="submit">
           登录
         </FaButton>
         <div class="mt-4 flex-center gap-2 text-sm">
-          <span class="text-secondary-foreground op-50">还没有帐号?</span>
+          <span class="text-secondary-foreground op-50">还没有账号？</span>
           <FaButton variant="link" class="h-auto p-0" type="button" @click="emits('onRegister', form.values.account)">
-            注册新帐号
+            注册新账号
           </FaButton>
         </div>
       </form>

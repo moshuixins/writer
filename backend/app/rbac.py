@@ -9,7 +9,7 @@ PERMISSION_DEFINITIONS = [
     {"code": "books:read", "name": "查看书籍学习", "description": "查看书籍学习任务和导入记录"},
     {"code": "books:write", "name": "管理书籍学习", "description": "发起书籍学习和导入任务"},
     {"code": "chat:read", "name": "查看会话", "description": "查看写作会话和消息"},
-    {"code": "chat:write", "name": "写作对话", "description": "创建和发送写作会话消息"},
+    {"code": "chat:write", "name": "写作会话", "description": "创建、进入和发送写作会话消息"},
     {"code": "documents:read", "name": "查看文档", "description": "查看导出文档和历史"},
     {"code": "documents:write", "name": "管理文档", "description": "导出和保存文档"},
     {"code": "materials:read", "name": "查看素材", "description": "查看和搜索素材"},

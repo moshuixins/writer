@@ -4,7 +4,7 @@ import type { WriterDraft } from '@/types/writer'
 import Editor from '@tinymce/tinymce-vue'
 import { ElMessage } from 'element-plus'
 import tinymce from 'tinymce'
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import 'tinymce/icons/default'
 import 'tinymce/themes/silver'
 import 'tinymce/models/dom'
@@ -183,6 +183,35 @@ function parseInlineChildren(element: HTMLElement): Array<Record<string, unknown
   return nodes
 }
 
+function countTextCharacters(text: string): number {
+  return normalizePlainText(text).replaceAll(/\s+/gu, '').length
+}
+
+function countBodyCharacters(body: unknown): number {
+  const normalized = normalizeBodyJson(body)
+
+  function countNode(node: unknown): number {
+    if (!node || typeof node !== 'object') {
+      return 0
+    }
+
+    const current = node as Record<string, unknown>
+    if (current.type === 'text') {
+      return countTextCharacters(String(current.text || ''))
+    }
+
+    if (!Array.isArray(current.content)) {
+      return 0
+    }
+
+    return current.content.reduce((total, child) => total + countNode(child), 0)
+  }
+
+  return Array.isArray(normalized.content)
+    ? normalized.content.reduce((total, node) => total + countNode(node), 0)
+    : 0
+}
+
 function bodyJsonToHtml(body: unknown): string {
   const normalized = normalizeBodyJson(body)
   const rootContent = Array.isArray(normalized.content) ? normalized.content : []
@@ -343,6 +372,8 @@ const internalDraft = ref<WriterDraft>(cloneDraft(props.modelValue))
 const editorHtml = ref<string>(bodyJsonToHtml(internalDraft.value.body_json))
 const editorInstance = ref<TinyEditor | null>(null)
 
+const bodyCharacterCount = computed(() => countBodyCharacters(internalDraft.value.body_json))
+
 type BlockTag = 'p' | 'h1' | 'h2' | 'h3'
 
 function registerBlockButton(editor: TinyEditor, name: string, label: string, tag: BlockTag) {
@@ -371,7 +402,7 @@ const editorInit = {
   menubar: false,
   height: '100%',
   toolbar: 'undo redo | format_p format_h1 format_h2 format_h3 | bold underline | removeformat',
-  toolbar_mode: 'wrap',
+  toolbar_mode: 'scrolling',
   statusbar: false,
   branding: false,
   promotion: false,
@@ -390,34 +421,38 @@ const editorInit = {
   },
   content_style: `
     body {
-      margin: 0;
-      padding: 20px;
+      box-sizing: border-box;
+      max-width: 760px;
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 28px 36px 72px;
       font-family: FangSong, "仿宋", serif;
       font-size: 16px;
-      line-height: 1.85;
+      line-height: 1.9;
       color: #111827;
+      background: #fdfbf6;
     }
     p {
-      margin: 0 0 10px;
+      margin: 0 0 12px;
       text-indent: 2em;
     }
     h1 {
-      margin: 16px 0 10px;
+      margin: 18px 0 12px;
       text-indent: 0;
       text-align: center;
-      font-size: 20px;
+      font-size: 22px;
       font-weight: 700;
       font-family: SimHei, "黑体", sans-serif;
     }
     h2 {
-      margin: 14px 0 10px;
+      margin: 16px 0 12px;
       text-indent: 2em;
-      font-size: 17px;
+      font-size: 18px;
       font-family: SimHei, "黑体", sans-serif;
       font-weight: 700;
     }
     h3 {
-      margin: 12px 0 8px;
+      margin: 14px 0 10px;
       text-indent: 2em;
       font-size: 16px;
       font-family: KaiTi, "楷体", serif;
@@ -557,16 +592,24 @@ onBeforeUnmount(() => {
 <template>
   <div class="official-editor">
     <div class="editor-head">
-      <div class="save-indicator" :class="{ saving }">
-        <span>{{ saveStatus }}</span>
-        <span v-if="lastSavedAt" class="saved-at">{{ lastSavedAt }}</span>
+      <div class="head-meta">
+        <div class="save-indicator" :class="{ saving }">
+          <span class="save-indicator__dot" />
+          <span>{{ saveStatus }}</span>
+          <span v-if="lastSavedAt" class="saved-at">{{ lastSavedAt }}</span>
+        </div>
+        <div class="word-counter">
+          <span class="word-counter__label">正文</span>
+          <strong>{{ bodyCharacterCount }}</strong>
+          <span>字</span>
+        </div>
       </div>
       <div class="head-actions">
         <el-button size="small" type="primary" plain :loading="saving" @click="emit('manualSave')">
           手动保存
         </el-button>
         <el-button size="small" @click="emitQuoteSelection">
-          引用选中文本到对话
+          引用选中文本
         </el-button>
       </div>
     </div>
@@ -588,11 +631,9 @@ onBeforeUnmount(() => {
 .official-editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   height: 100%;
   min-height: 0;
-  padding: 12px;
-  background: var(--el-bg-color);
 }
 
 .editor-head {
@@ -602,25 +643,69 @@ onBeforeUnmount(() => {
   justify-content: space-between;
 }
 
+.head-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .save-indicator {
   display: inline-flex;
   gap: 8px;
   align-items: center;
+  padding: 7px 10px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--w-text-secondary);
+  background: #f4efe5;
+  border: 1px solid #e1d9cb;
+  border-radius: 999px;
+}
+
+.save-indicator__dot {
+  width: 7px;
+  height: 7px;
+  background: currentcolor;
+  border-radius: 999px;
+  opacity: 0.9;
 }
 
 .save-indicator.saving {
-  color: var(--el-color-primary);
+  color: var(--w-state-warning-text);
+  background: var(--w-state-warning-bg);
+  border-color: rgb(133 91 28 / 14%);
 }
 
 .saved-at {
-  color: var(--el-text-color-placeholder);
+  color: var(--w-text-tertiary);
+}
+
+.word-counter {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--w-text-secondary);
+  background: #f7f2e8;
+  border: 1px solid #e1d9cb;
+  border-radius: 999px;
+}
+
+.word-counter strong {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--w-text-primary);
+}
+
+.word-counter__label {
+  color: var(--w-text-tertiary);
 }
 
 .head-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .editor-surface {
@@ -628,9 +713,10 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  background: linear-gradient(180deg, #f6f1e7 0%, #fdfbf6 18%, #fdfbf6 100%);
+  border: 1px solid var(--w-paper-border);
+  border-radius: 18px;
+  box-shadow: var(--w-paper-shadow);
 }
 
 .editor-surface :deep(.tox),
@@ -645,6 +731,7 @@ onBeforeUnmount(() => {
   visibility: visible !important;
   flex-direction: column;
   min-height: 0;
+  background: transparent;
   border: none;
   border-radius: inherit;
   box-shadow: none;
@@ -653,29 +740,37 @@ onBeforeUnmount(() => {
 .editor-surface :deep(.tox-editor-container),
 .editor-surface :deep(.tox-sidebar-wrap),
 .editor-surface :deep(.tox-edit-area) {
+  display: flex;
   flex: 1;
   min-height: 0;
 }
 
 .editor-surface :deep(.tox-edit-area) {
   padding: 0;
+  background: var(--w-paper-bg);
 }
 
 .editor-surface :deep(.tox .tox-editor-header) {
-  background: var(--w-color-white);
+  background: #f7f2e8;
   border-bottom: 1px solid var(--w-gray-200);
 }
 
 .editor-surface :deep(.tox .tox-toolbar-overlord),
 .editor-surface :deep(.tox .tox-toolbar__primary) {
-  background: var(--w-color-white);
+  background: transparent;
+}
+
+.editor-surface :deep(.tox .tox-toolbar__primary) {
+  gap: 8px;
+  padding: 10px 12px;
 }
 
 .editor-surface :deep(.tox .tox-toolbar__group) {
+  flex-wrap: nowrap;
   gap: 6px;
-  padding: 0 8px 0 0;
-  margin-right: 8px;
-  border-right: 1px solid var(--w-gray-200);
+  padding-right: 10px;
+  margin-right: 10px;
+  border-right: 1px solid rgb(201 194 183 / 60%);
 }
 
 .editor-surface :deep(.tox .tox-toolbar__group:last-child) {
@@ -686,49 +781,53 @@ onBeforeUnmount(() => {
 
 .editor-surface :deep(.tox .tox-tbtn) {
   box-sizing: border-box;
-  min-width: 32px;
-  height: 32px;
+  min-width: 34px;
+  height: 34px;
   padding: 0 11px;
-  color: var(--w-btn-secondary-text);
-  background: var(--w-btn-secondary-bg);
-  border: 1px solid var(--w-btn-secondary-border);
-  border-radius: var(--el-border-radius-base);
+  color: var(--w-text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
   box-shadow: none;
 }
 
 .editor-surface :deep(.tox .tox-tbtn .tox-tbtn__select-label) {
-  font-family: var(--el-font-family);
-  font-size: 14px;
-  font-weight: 500;
+  font-family: var(--w-font-sans);
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.2;
   letter-spacing: 0;
 }
 
 .editor-surface :deep(.tox .tox-tbtn:hover) {
-  color: var(--w-btn-secondary-text);
-  background: var(--w-btn-secondary-hover-bg);
-  border-color: var(--w-btn-secondary-border);
+  color: var(--w-text-primary);
+  background: #efe8dc;
+  border-color: #ddd2c0;
 }
 
 .editor-surface :deep(.tox .tox-tbtn.tox-tbtn--enabled),
 .editor-surface :deep(.tox .tox-tbtn[aria-pressed="true"]) {
-  color: var(--w-btn-secondary-text);
-  background: var(--w-btn-secondary-active-bg);
-  border-color: var(--w-btn-secondary-border);
+  color: var(--w-text-primary);
+  background: #fffdf8;
+  border-color: #d7cdbd;
 }
 
 .editor-surface :deep(.tox .tox-tbtn svg) {
   fill: currentcolor;
 }
 
-@media (max-width: 900px) {
-  .official-editor {
-    padding: 8px;
-  }
+.editor-surface :deep(.tox .tox-edit-area__iframe) {
+  background: var(--w-paper-bg);
+}
 
+@media (max-width: 900px) {
   .editor-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .head-meta {
+    justify-content: space-between;
   }
 
   .head-actions {

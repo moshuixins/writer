@@ -19,17 +19,21 @@ function logout() {
 
 <template>
   <el-dropdown trigger="click" placement="bottom-end">
-    <button class="app-user-menu" type="button">
+    <button class="app-user-menu" type="button" :aria-label="`用户菜单：${displayName}`">
       <span class="app-user-menu__avatar">{{ displayName.slice(0, 1) }}</span>
-      <span class="app-user-menu__meta">
-        <span class="app-user-menu__name">{{ displayName }}</span>
-        <span class="app-user-menu__dept">{{ department }}</span>
-      </span>
-      <el-icon><ArrowDown /></el-icon>
+      <el-icon class="app-user-menu__arrow">
+        <ArrowDown />
+      </el-icon>
     </button>
     <template #dropdown>
       <el-dropdown-menu>
-        <el-dropdown-item @click="openProfile">
+        <el-dropdown-item disabled>
+          <div class="app-user-menu__dropdown-meta">
+            <strong>{{ displayName }}</strong>
+            <span>{{ department }}</span>
+          </div>
+        </el-dropdown-item>
+        <el-dropdown-item divided @click="openProfile">
           <el-icon><Setting /></el-icon>
           偏好设置
         </el-dropdown-item>
@@ -45,16 +49,17 @@ function logout() {
 <style scoped>
 .app-user-menu {
   display: inline-flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
+  justify-content: center;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 5px 8px 5px 5px;
   color: var(--w-text-primary);
   cursor: pointer;
-  background: var(--w-color-white);
+  background: rgb(255 253 249 / 82%);
   border: 1px solid var(--w-divider);
-  border-radius: var(--w-radius-md);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  border-radius: 999px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .app-user-menu:hover {
@@ -71,8 +76,8 @@ function logout() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   font-size: 13px;
   font-weight: 700;
   color: var(--w-color-white);
@@ -80,34 +85,26 @@ function logout() {
   border-radius: 999px;
 }
 
-.app-user-menu__meta {
+.app-user-menu__arrow {
+  font-size: 14px;
+  color: var(--w-text-secondary);
+}
+
+.app-user-menu__dropdown-meta {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  text-align: left;
+  gap: 3px;
+  min-width: 180px;
+  line-height: 1.45;
 }
 
-.app-user-menu__name {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.app-user-menu__dropdown-meta strong {
   font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
+  color: var(--w-text-primary);
 }
 
-.app-user-menu__dept {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.app-user-menu__dropdown-meta span {
   font-size: 12px;
   color: var(--w-text-secondary);
-  white-space: nowrap;
-}
-
-@media (max-width: 768px) {
-  .app-user-menu__meta {
-    display: none;
-  }
 }
 </style>

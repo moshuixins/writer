@@ -5,11 +5,21 @@ import Writer from './modules/writer'
 
 const constantRoutes: RouteRecordRaw[] = [
   {
+    path: '/',
+    name: 'landing',
+    component: () => import('@/views/landing.vue'),
+    meta: {
+      title: '正式公文写作平台',
+      public: true,
+    },
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/login.vue'),
     meta: {
-      title: '\u767B\u5F55',
+      title: '登录',
+      public: true,
     },
   },
   {
@@ -17,45 +27,35 @@ const constantRoutes: RouteRecordRaw[] = [
     name: 'notFound',
     component: () => import('@/views/[...all].vue'),
     meta: {
-      title: '\u627E\u4E0D\u5230\u9875\u9762',
+      title: '找不到页面',
+      public: true,
     },
   },
 ]
 
 const systemRoutes: RouteRecordRaw[] = [
   {
-    path: '/',
-    redirect: '/chat',
-    component: () => import('@/layouts/index.vue'),
+    path: '/reload',
+    name: 'reload',
+    component: () => import('@/views/reload.vue'),
     meta: {
-      title: () => useSettingsStore().settings.home.title,
+      title: '刷新页面',
       breadcrumb: false,
     },
-    children: [
-      {
-        path: 'reload',
-        name: 'reload',
-        component: () => import('@/views/reload.vue'),
-        meta: {
-          title: '\u5237\u65B0\u9875\u9762',
-          breadcrumb: false,
-        },
-      },
-    ],
   },
 ]
 
 const asyncRoutes: Route.recordMainRaw[] = [
   {
     meta: {
-      title: '\u5199\u4F5C\u5DE5\u4F5C\u533A',
+      title: '写作工作区',
       icon: 'i-ep:edit-pen',
     },
     children: [Writer],
   },
   {
     meta: {
-      title: '\u7CFB\u7EDF\u7BA1\u7406',
+      title: '系统管理',
       icon: 'i-ep:setting',
     },
     children: [Admin],

@@ -6,6 +6,7 @@ import apiBooks from '@/api/modules/books'
 import ActionBar from '@/components/ActionBar/index.vue'
 import DataTableShell from '@/components/DataTableShell/index.vue'
 import EmptyState from '@/components/EmptyState/index.vue'
+import MetaTag from '@/components/MetaTag/index.vue'
 import PageHeader from '@/components/PageHeader/index.vue'
 import PageShell from '@/components/PageShell/index.vue'
 import PanelCard from '@/components/PanelCard/index.vue'
@@ -309,7 +310,11 @@ onBeforeUnmount(() => {
               <StatusBadge :label="row.status" :tone="statusTone(row.status)" />
             </template>
           </el-table-column>
-          <el-table-column prop="doc_type" label="主文种" min-width="140" show-overflow-tooltip />
+          <el-table-column label="主文种" min-width="140">
+            <template #default="{ row }">
+              <MetaTag :label="row.doc_type || '其他'" tone="accent" />
+            </template>
+          </el-table-column>
           <el-table-column label="更新时间" width="190">
             <template #default="{ row }">
               {{ formatDate(row.updated_at) }}
@@ -442,7 +447,11 @@ onBeforeUnmount(() => {
           </template>
 
           <el-table-column prop="source_name" label="来源文件" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="doc_type" label="主文种" min-width="140" show-overflow-tooltip />
+          <el-table-column label="主文种" min-width="140">
+            <template #default="{ row }">
+              <MetaTag :label="row.doc_type || '其他'" tone="accent" />
+            </template>
+          </el-table-column>
           <el-table-column label="状态" width="110">
             <template #default="{ row }">
               <StatusBadge :label="row.status" :tone="statusTone(row.status)" />
@@ -494,6 +503,10 @@ onBeforeUnmount(() => {
   color: var(--w-text-secondary);
 }
 
+.book-learning__meta :deep(.el-switch) {
+  margin-left: auto;
+}
+
 .book-learning__mono {
   max-width: 100%;
   padding: 4px 8px;
@@ -513,10 +526,10 @@ onBeforeUnmount(() => {
 }
 
 .book-learning__progress-card {
-  padding: 14px;
-  background: var(--w-gray-50);
+  padding: 16px;
+  background: linear-gradient(180deg, #fffdf9 0%, #f7f3eb 100%);
   border: 1px solid var(--w-divider);
-  border-radius: var(--w-radius-md);
+  border-radius: 16px;
 }
 
 .book-learning__progress-label {

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import forbiddenIllustration from '@/assets/icons/403.svg'
+
 defineOptions({
   name: 'FaNotAllowed',
 })
@@ -31,8 +33,8 @@ function goBack() {
 </script>
 
 <template>
-  <div class="absolute left-[50%] top-[50%] flex flex-col items-center justify-between lg-flex-row -translate-x-50% -translate-y-50% lg-gap-12">
-    <FaIcon name="403" class="text-[300px] lg-text-[400px]" />
+  <div class="absolute left-[50%] top-[50%] flex flex-col items-center justify-between gap-10 lg-flex-row -translate-x-50% -translate-y-50% lg-gap-12">
+    <img :src="forbiddenIllustration" alt="" class="h-auto w-[300px] lg:w-[400px]" aria-hidden="true">
     <div class="flex flex-col gap-4">
       <h1 class="m-0 text-6xl font-sans">
         403

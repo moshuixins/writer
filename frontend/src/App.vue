@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
-import { ua } from '@/utils/ua'
 import { loadingFadeOut } from '@/utils/app-loading'
+import { ua } from '@/utils/ua'
 import Provider from './ui/provider/index.vue'
 
 const route = useRoute()
@@ -25,10 +25,14 @@ watch([
   () => settingsStore.settings.app.enableDynamicTitle,
   () => settingsStore.title,
 ], () => {
-  const appTitle = import.meta.env.VITE_APP_TITLE || '\u516C\u6587\u5199\u4F5C\u7CFB\u7EDF'
+  const appTitle = import.meta.env.VITE_APP_TITLE || '公文写作系统'
   if (settingsStore.settings.app.enableDynamicTitle && settingsStore.title) {
-    const title = typeof settingsStore.title === 'function' ? settingsStore.title() : settingsStore.title
-    document.title = `${title} - ${appTitle}`
+    const rawTitle = typeof settingsStore.title === 'function' ? settingsStore.title() : settingsStore.title
+    const title = rawTitle.trim()
+    const suffix = ` - ${appTitle}`
+    document.title = !title || title === appTitle || title.endsWith(suffix)
+      ? (title || appTitle)
+      : `${title}${suffix}`
     return
   }
   document.title = appTitle

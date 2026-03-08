@@ -2,15 +2,19 @@
 import type { ChatSession } from '@/types/writer'
 import { Close, Edit, Plus } from '@element-plus/icons-vue'
 import EmptyState from '@/components/EmptyState/index.vue'
+import MetaTag from '@/components/MetaTag/index.vue'
 
-const props = defineProps<{
+withDefaults(defineProps<{
   currentSessionId: number | null
   filteredSessions: ChatSession[]
+  formatDate: (value?: string | null) => string
   keyword: string
   loading: boolean
   sessions: ChatSession[]
-  formatDate: (value: string) => string
-}>()
+  showCreateButton?: boolean
+}>(), {
+  showCreateButton: true,
+})
 
 const emit = defineEmits<{
   (e: 'create'): void
@@ -19,15 +23,11 @@ const emit = defineEmits<{
   (e: 'select', session: ChatSession): void
   (e: 'update:keyword', value: string): void
 }>()
-
-function formatDate(value: string) {
-  return props.formatDate(value)
-}
 </script>
 
 <template>
   <div class="writing-session-sidebar">
-    <el-button type="primary" class="writing-session-sidebar__new" @click="emit('create')">
+    <el-button v-if="showCreateButton" type="primary" class="writing-session-sidebar__new" @click="emit('create')">
       <el-icon><Plus /></el-icon>
       <span>新建会话</span>
     </el-button>
@@ -45,7 +45,7 @@ function formatDate(value: string) {
         <el-skeleton :rows="4" animated class="writing-session-sidebar__skeleton" />
       </template>
       <template v-else-if="sessions.length === 0">
-        <EmptyState title="暂无会话" description="点击上方“新建会话”即可开始新的写作任务。" />
+        <EmptyState title="暂无会话" description="使用页面中的新建会话入口即可开始新的写作任务。" />
       </template>
       <template v-else-if="filteredSessions.length === 0">
         <EmptyState title="没有匹配结果" description="可以尝试缩短关键词，或直接从现有会话中选择。" />
@@ -65,9 +65,7 @@ function formatDate(value: string) {
             </div>
             <div class="writing-session-sidebar__item-meta">
               <span>{{ formatDate(session.created_at) }}</span>
-              <el-tag v-if="session.doc_type" size="small">
-                {{ session.doc_type }}
-              </el-tag>
+              <MetaTag v-if="session.doc_type" :label="session.doc_type" tone="muted" />
             </div>
           </div>
           <div class="writing-session-sidebar__item-actions">
@@ -98,11 +96,18 @@ function formatDate(value: string) {
   width: 100%;
 }
 
+.writing-session-sidebar__search :deep(.el-input__wrapper) {
+  background: rgb(255 253 249 / 82%);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgb(227 222 212 / 92%);
+}
+
 .writing-session-sidebar__list {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  padding-right: 2px;
   overflow-y: auto;
 }
 
@@ -111,27 +116,40 @@ function formatDate(value: string) {
 }
 
 .writing-session-sidebar__item {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   width: 100%;
-  padding: 14px;
+  padding: 14px 14px 14px 16px;
   text-align: left;
   cursor: pointer;
-  background: var(--w-color-white);
-  border: 1px solid var(--w-divider);
-  border-radius: var(--w-radius-lg);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  background: rgb(255 253 249 / 90%);
+  border: 1px solid rgb(227 222 212 / 92%);
+  border-radius: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
-.writing-session-sidebar__item:hover,
+.writing-session-sidebar__item:hover {
+  border-color: #d5cdbf;
+  box-shadow: var(--w-shadow-xs);
+}
+
 .writing-session-sidebar__item.is-active {
-  border-color: var(--w-color-black);
+  background: linear-gradient(180deg, #f7f3ea 0%, #f1ebe0 100%);
+  border-color: #d6cebf;
   box-shadow: var(--w-shadow-sm);
 }
 
-.writing-session-sidebar__item.is-active {
-  transform: translateY(-1px);
+.writing-session-sidebar__item.is-active::before {
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 8px;
+  width: 3px;
+  content: "";
+  background: var(--w-color-black);
+  border-radius: 999px;
 }
 
 .writing-session-sidebar__item-main {
@@ -145,7 +163,7 @@ function formatDate(value: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--w-text-primary);
   white-space: nowrap;
 }
@@ -163,5 +181,6 @@ function formatDate(value: string) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  justify-content: space-between;
 }
 </style>

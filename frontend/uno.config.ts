@@ -3,12 +3,8 @@ import { entriesToCss } from '@unocss/core'
 import presetLegacyCompat from '@unocss/preset-legacy-compat'
 import {
   defineConfig,
-  presetAttributify,
   presetIcons,
-  presetTypography,
   presetWind3,
-  transformerCompileClass,
-  transformerDirectives,
   transformerVariantGroup,
 } from 'unocss'
 import { presetAnimations } from 'unocss-preset-animations'
@@ -63,7 +59,7 @@ export default defineConfig<Theme>({
   content: {
     pipeline: {
       include: [
-        /\.(vue|svelte|[jt]sx|mdx?|astro|elm|php|phtml|html)($|\?)/,
+        /\.(vue|[jt]sx?|html)($|\?)/,
         'src/**/*.{js,ts}',
       ],
     },
@@ -90,14 +86,12 @@ export default defineConfig<Theme>({
   presets: [
     presetWind3(),
     presetAnimations(),
-    presetAttributify(),
     presetIcons({
       extraProperties: {
         'display': 'inline-block',
         'vertical-align': 'middle',
       },
     }),
-    presetTypography(),
     presetLegacyCompat({
       legacyColorSpace: true,
     }),
@@ -172,8 +166,6 @@ body {
     },
   ],
   transformers: [
-    transformerDirectives(),
     transformerVariantGroup(),
-    transformerCompileClass(),
   ],
 })

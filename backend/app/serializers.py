@@ -30,7 +30,7 @@ def _sanitize_display_text(value: Any) -> str:
     if not text:
         return ""
 
-    placeholder_chars = {"?", "？", "�"}
+    placeholder_chars = {"?", "？", "\uFFFD"}
     if all(char in placeholder_chars for char in text):
         return ""
 

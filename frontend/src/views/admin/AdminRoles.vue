@@ -5,6 +5,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import apiAccounts from '@/api/modules/accounts'
 import DataTableShell from '@/components/DataTableShell/index.vue'
 import EmptyState from '@/components/EmptyState/index.vue'
+import MetaTag from '@/components/MetaTag/index.vue'
 import PageHeader from '@/components/PageHeader/index.vue'
 import PageShell from '@/components/PageShell/index.vue'
 import PanelCard from '@/components/PanelCard/index.vue'
@@ -30,8 +31,33 @@ const roleForm = reactive({
   permission_codes: [] as string[],
 })
 
+const permissionSectionLabels: Record<string, string> = {
+  accounts: '账户管理',
+  books: '书籍学习',
+  chat: '写作会话',
+  documents: '文稿导出',
+  materials: '素材管理',
+  preferences: '写作偏好',
+  styles: '风格学习',
+}
+
 const isEditing = computed(() => roleForm.id > 0)
 const currentAccountName = computed(() => accounts.value.find(item => item.id === selectedAccountId.value)?.name || '-')
+const permissionSections = computed(() => {
+  const groups = new Map<string, { key: string, title: string, items: PermissionInfo[] }>()
+  permissions.value.forEach((item) => {
+    const key = item.code.split(':')[0]
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        title: permissionSectionLabels[key] || key,
+        items: [],
+      })
+    }
+    groups.get(key)!.items.push(item)
+  })
+  return Array.from(groups.values())
+})
 
 function statusLabel(status: string) {
   return status === 'active' ? '启用' : '停用'
@@ -53,6 +79,22 @@ function resetRoleForm() {
 function permissionLabel(code: string) {
   return permissions.value.find(item => item.code === code)?.name || code
 }
+
+function visiblePermissions(permissionCodes: string[]) {
+  return permissionCodes.slice(0, 2)
+}
+
+function remainingPermissionCount(permissionCodes: string[]) {
+  return Math.max(permissionCodes.length - 2, 0)
+}
+
+function permissionSummary(permissionCodes: string[]) {
+  if (!permissionCodes.length) {
+    return '未分配权限'
+  }
+  return permissionCodes.map(permissionLabel).join('、')
+}
+
 async function loadAccounts() {
   const { data } = await apiAccounts.list()
   accounts.value = data.items || []
@@ -195,7 +237,7 @@ onMounted(async () => {
       :subtitle="selectedAccountId ? `当前账户：${currentAccountName}` : '请先选择账户后再维护角色'"
     >
       <DataTableShell>
-        <el-table v-loading="loadingRoles" :data="roles">
+        <el-table v-loading="loadingRoles" :data="roles" table-layout="fixed">
           <template #empty>
             <EmptyState
               icon="i-ep:key"
@@ -204,29 +246,33 @@ onMounted(async () => {
             />
           </template>
 
-          <el-table-column prop="code" label="编码" min-width="140" />
-          <el-table-column prop="name" label="名称" min-width="140" />
-          <el-table-column label="状态" width="110">
+          <el-table-column prop="code" label="编码" min-width="132" show-overflow-tooltip />
+          <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
+          <el-table-column label="状态" width="100">
             <template #default="{ row }">
               <StatusBadge :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="110">
+          <el-table-column label="类型" width="104">
             <template #default="{ row }">
-              <StatusBadge :label="row.is_system ? '系统' : '自定义'" :tone="row.is_system ? 'warning' : 'neutral'" />
+              <MetaTag :label="row.is_system ? '系统' : '自定义'" :tone="row.is_system ? 'warning' : 'muted'" />
             </template>
           </el-table-column>
-          <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
-          <el-table-column label="权限" min-width="280">
+          <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
+          <el-table-column label="权限" min-width="220">
             <template #default="{ row }">
-              <div class="perm-tags">
-                <el-tag v-for="perm in row.permissions" :key="`${row.id}-${perm}`" size="small">
-                  {{ permissionLabel(perm) }}
-                </el-tag>
+              <div class="perm-summary" :title="permissionSummary(row.permissions)">
+                <div class="perm-summary__count">
+                  {{ row.permissions.length }} 项权限
+                </div>
+                <div class="perm-tags">
+                  <MetaTag v-for="perm in visiblePermissions(row.permissions)" :key="`${row.id}-${perm}`" :label="permissionLabel(perm)" tone="muted" />
+                  <MetaTag v-if="remainingPermissionCount(row.permissions) > 0" :label="`+${remainingPermissionCount(row.permissions)}`" tone="accent" />
+                </div>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="180" fixed="right">
+          <el-table-column label="操作" width="132">
             <template #default="{ row }">
               <div class="row-actions">
                 <el-button v-if="canWriteRoles" text size="small" :disabled="row.is_system" @click="openEditDialog(row)">
@@ -242,19 +288,33 @@ onMounted(async () => {
       </DataTableShell>
     </PanelCard>
 
-    <PanelCard title="权限字典" subtitle="展示后端开放的权限编码及其中文说明。">
-      <div class="permission-grid">
-        <div v-for="perm in permissions" :key="perm.code" class="permission-item">
-          <div class="permission-item__name">
-            {{ perm.name }}
+    <PanelCard title="权限字典" subtitle="按功能域展示后端开放的权限编码及其中文说明。">
+      <div class="permission-sections">
+        <section v-for="section in permissionSections" :key="section.key" class="permission-section">
+          <header class="permission-section__header">
+            <div class="permission-section__title">
+              {{ section.title }}
+            </div>
+            <div class="permission-section__meta">
+              {{ section.items.length }} 项权限
+            </div>
+          </header>
+          <div class="permission-list">
+            <div v-for="perm in section.items" :key="perm.code" class="permission-item">
+              <div class="permission-item__main">
+                <div class="permission-item__name">
+                  {{ perm.name }}
+                </div>
+                <div class="permission-item__desc">
+                  {{ perm.description }}
+                </div>
+              </div>
+              <div class="permission-item__code">
+                {{ perm.code }}
+              </div>
+            </div>
           </div>
-          <div class="permission-item__code">
-            {{ perm.code }}
-          </div>
-          <div class="permission-item__desc">
-            {{ perm.description }}
-          </div>
-        </div>
+        </section>
       </div>
     </PanelCard>
 
@@ -326,10 +386,24 @@ onMounted(async () => {
   width: 100%;
 }
 
+.perm-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.perm-summary__count {
+  font-size: 12px;
+  color: var(--w-text-secondary);
+}
+
 .perm-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .row-actions,
@@ -339,17 +413,62 @@ onMounted(async () => {
   align-items: center;
 }
 
-.permission-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+.row-actions {
+  flex-wrap: wrap;
+}
+
+.permission-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.permission-section {
+  padding: 16px;
+  background: #faf7f1;
+  border: 1px solid var(--w-divider);
+  border-radius: 16px;
+}
+
+.permission-section__header {
+  display: flex;
   gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.permission-section__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--w-text-primary);
+}
+
+.permission-section__meta {
+  font-size: 12px;
+  color: var(--w-text-tertiary);
+}
+
+.permission-list {
+  display: grid;
+  gap: 10px;
 }
 
 .permission-item {
-  padding: 14px;
-  background: var(--w-gray-50);
-  border: 1px solid var(--w-divider);
-  border-radius: var(--w-radius-md);
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: rgb(255 255 255 / 88%);
+  border: 1px solid #ebe3d8;
+  border-radius: 12px;
+}
+
+.permission-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .permission-item__name {
@@ -358,18 +477,16 @@ onMounted(async () => {
   color: var(--w-text-primary);
 }
 
-.permission-item__code {
-  margin-top: 6px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
-  color: var(--w-text-tertiary);
-}
-
 .permission-item__desc {
-  margin-top: 8px;
   font-size: 13px;
   line-height: 1.6;
   color: var(--w-text-secondary);
+}
+
+.permission-item__code {
+  font-family: var(--w-font-mono);
+  font-size: 12px;
+  color: var(--w-text-tertiary);
 }
 
 .permission-checks {
@@ -397,6 +514,10 @@ onMounted(async () => {
   .form-grid,
   .permission-checks {
     grid-template-columns: 1fr;
+  }
+
+  .permission-item {
+    flex-direction: column;
   }
 }
 </style>

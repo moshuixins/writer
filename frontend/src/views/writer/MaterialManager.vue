@@ -6,10 +6,10 @@ import apiMaterials from '@/api/modules/materials'
 import ActionBar from '@/components/ActionBar/index.vue'
 import DataTableShell from '@/components/DataTableShell/index.vue'
 import EmptyState from '@/components/EmptyState/index.vue'
+import MetaTag from '@/components/MetaTag/index.vue'
 import PageHeader from '@/components/PageHeader/index.vue'
 import PageShell from '@/components/PageShell/index.vue'
 import PanelCard from '@/components/PanelCard/index.vue'
-import StatusBadge from '@/components/StatusBadge/index.vue'
 import { useUserStore } from '@/store/modules/user'
 import { DOC_TYPE_GROUPS } from '@/utils/constants'
 import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
@@ -54,6 +54,36 @@ const filters = reactive({
 })
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
+
+interface UploadErrorLike extends Error {
+  response?: string | { detail?: string }
+  status?: number
+}
+
+function resolveUploadErrorMessage(error?: UploadErrorLike | null) {
+  const response = error?.response
+  if (typeof response === 'string') {
+    try {
+      const parsed = JSON.parse(response) as { detail?: string }
+      if (parsed.detail) {
+        return parsed.detail
+      }
+    }
+    catch {
+      // ignore invalid response bodies
+    }
+  }
+  else if (response?.detail) {
+    return response.detail
+  }
+
+  if (error?.message) {
+    return error.message
+  }
+
+  return ''
+}
+
 async function loadMaterials() {
   loading.value = true
   try {
@@ -212,9 +242,10 @@ function onUploadSuccess() {
   resetAndLoad()
 }
 
-function onUploadError() {
+function onUploadError(error?: UploadErrorLike) {
   const wasParsing = parsePercent.value > 0 || uploadPercent.value >= 100 || parsing.value
-  failUploadFlow(wasParsing ? '素材解析失败，请稍后重试' : '上传失败，请稍后重试')
+  const serverMessage = resolveUploadErrorMessage(error)
+  failUploadFlow(serverMessage || (wasParsing ? '素材解析失败，请稍后重试' : '上传失败，请稍后重试'))
 }
 
 function showDetail(row: Material) {
@@ -330,6 +361,7 @@ onUnmounted(() => {
           :on-error="onUploadError"
           :on-progress="onUploadProgress"
           :before-upload="beforeUpload"
+          name="file"
           :show-file-list="false"
           accept=".doc,.docx,.pdf,.txt"
         >
@@ -402,7 +434,7 @@ onUnmounted(() => {
           <el-table-column prop="title" label="标题" min-width="240" show-overflow-tooltip />
           <el-table-column prop="doc_type" label="文种" width="140">
             <template #default="{ row }">
-              <StatusBadge :label="row.doc_type || '未分类'" tone="neutral" />
+              <MetaTag :label="row.doc_type || '未分类'" tone="muted" />
             </template>
           </el-table-column>
           <el-table-column prop="summary" label="摘要" min-width="260" show-overflow-tooltip />

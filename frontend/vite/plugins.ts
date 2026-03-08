@@ -1,5 +1,4 @@
 import type { PluginOption } from 'vite'
-import path from 'node:path'
 import process from 'node:process'
 import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
@@ -11,7 +10,6 @@ import { loadEnv } from 'vite'
 import Archiver from 'vite-plugin-archiver'
 import { compression } from 'vite-plugin-compression2'
 import { envParse, parseLoadedEnv } from 'vite-plugin-env-parse'
-import { createSvgIconsPlugin } from 'vite-plugin-svg-icons'
 import VueDevTools from 'vite-plugin-vue-devtools'
 import { createAppLoadingPlugin } from './appLoading'
 
@@ -45,11 +43,8 @@ export default function createVitePlugins(mode: string, isBuild = false) {
       ],
       dts: './src/types/components.d.ts',
     }),
-    Unocss(),
-    createSvgIconsPlugin({
-      iconDirs: [path.resolve(process.cwd(), 'src/assets/icons/')],
-      symbolId: 'icon-[dir]-[name]',
-      svgoOptions: isBuild,
+    Unocss({
+      inspector: false,
     }),
     viteEnv.VITE_BUILD_COMPRESS && compression({
       exclude: [/\.(br)$/, /\.(gz)$/],

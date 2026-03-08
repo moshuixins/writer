@@ -6,10 +6,10 @@ import apiDocuments from '@/api/modules/documents'
 import ActionBar from '@/components/ActionBar/index.vue'
 import DataTableShell from '@/components/DataTableShell/index.vue'
 import EmptyState from '@/components/EmptyState/index.vue'
+import MetaTag from '@/components/MetaTag/index.vue'
 import PageHeader from '@/components/PageHeader/index.vue'
 import PageShell from '@/components/PageShell/index.vue'
 import PanelCard from '@/components/PanelCard/index.vue'
-import StatusBadge from '@/components/StatusBadge/index.vue'
 import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
 
 const docs = ref<ExportDoc[]>([])
@@ -95,14 +95,14 @@ onMounted(() => {
             <EmptyState
               icon="i-ep:folder-opened"
               title="暂无导出记录"
-              description="在写作对话页导出 docx 后，这里会展示对应历史。"
+              description="在写作工作台导出 docx 后，这里会展示对应历史。"
             />
           </template>
 
           <el-table-column prop="title" label="标题" min-width="260" show-overflow-tooltip />
           <el-table-column prop="doc_type" label="文种" width="140">
             <template #default="{ row }">
-              <StatusBadge :label="row.doc_type || '其他'" tone="neutral" />
+              <MetaTag :label="row.doc_type || '其他'" tone="accent" />
             </template>
           </el-table-column>
           <el-table-column prop="version" label="版本" width="90" align="center" />

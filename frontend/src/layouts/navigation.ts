@@ -17,7 +17,7 @@ export const businessNavGroups: BusinessNavGroup[] = [
     key: 'writer',
     title: '写作工作区',
     items: [
-      { key: 'chat', title: '写作对话', path: '/chat', icon: 'i-ep:chat-dot-round' },
+      { key: 'chat', title: '写作会话', path: '/chat', icon: 'i-ep:chat-dot-round' },
       { key: 'materials', title: '素材管理', path: '/materials', icon: 'i-ep:document' },
       { key: 'books', title: '书籍学习', path: '/book-learning', icon: 'i-ep:reading' },
       { key: 'history', title: '导出历史', path: '/history', icon: 'i-ep:folder-opened' },

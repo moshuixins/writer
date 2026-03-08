@@ -54,7 +54,7 @@ function handleSendCaptcha() {
     <form @submit="onSubmit">
       <div class="mb-8 space-y-2">
         <h3 class="text-4xl color-[var(--el-text-color-primary)] font-bold">
-          忘记密码了? 🔒
+          忘记密码了？
         </h3>
         <p class="text-sm text-muted-foreground lg:text-base">
           演示系统未提供该功能

@@ -4,6 +4,19 @@ import { findFirstAccessibleChildRoute } from '@/utils/permission'
 import { asyncRoutes } from './routes'
 import '@/assets/styles/nprogress.css'
 
+const protectedRoutePatterns = [
+  /^\/chat(?:\/\d+)?$/,
+  /^\/materials$/,
+  /^\/book-learning$/,
+  /^\/history$/,
+  /^\/settings$/,
+  /^\/admin(?:\/.+)?$/,
+]
+
+function isProtectedEntry(path: string) {
+  return protectedRoutePatterns.some(pattern => pattern.test(path))
+}
+
 function setupRoutes(router: Router) {
   router.beforeEach(async (to, _from, next) => {
     const settingsStore = useSettingsStore()
@@ -67,17 +80,28 @@ function setupRoutes(router: Router) {
       return
     }
 
-    if (to.name !== 'login') {
+    if (to.name === 'notFound' && isProtectedEntry(to.path)) {
       next({
         name: 'login',
         query: {
           redirect: to.fullPath !== settingsStore.settings.home.fullPath ? to.fullPath : undefined,
         },
+        replace: true,
       })
       return
     }
 
-    next()
+    if (to.meta.public || to.name === 'login') {
+      next()
+      return
+    }
+
+    next({
+      name: 'login',
+      query: {
+        redirect: to.fullPath !== settingsStore.settings.home.fullPath ? to.fullPath : undefined,
+      },
+    })
   })
 }
 

@@ -28,7 +28,7 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title='公文写作助手', version='1.0.0', lifespan=lifespan)
+    app = FastAPI(title='公文写作系统', version='1.0.0', lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -87,13 +87,13 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix='/api/auth', tags=['用户认证'])
     app.include_router(accounts.router, prefix='/api/accounts', tags=['账户管理'])
     app.include_router(materials.router, prefix='/api/materials', tags=['素材管理'])
-    app.include_router(chat.router, prefix='/api/chat', tags=['写作对话'])
+    app.include_router(chat.router, prefix='/api/chat', tags=['写作会话'])
     app.include_router(documents.router, prefix='/api/documents', tags=['文档管理'])
     app.include_router(preferences.router, prefix='/api/preferences', tags=['用户偏好'])
 
     @app.get('/api/health')
     def health_check():
-        return {'status': 'ok', 'service': '公文写作助手'}
+        return {'status': 'ok', 'service': '公文写作系统'}
 
     return app
 

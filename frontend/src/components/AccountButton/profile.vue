@@ -21,7 +21,7 @@ const tabs = ref([
   },
   {
     title: '安全设置',
-    description: '定期修改密码可以提高帐号安全性',
+    description: '定期修改密码可以提高账号安全性',
   },
 ])
 

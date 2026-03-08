@@ -30,7 +30,7 @@ function renderMessage(message: ChatMessage) {
       <EmptyState
         icon="i-ep:chat-dot-round"
         title="请先选择或新建会话"
-        description="选择左侧会话后，AI 对话、工作流和文稿草稿会同步进入当前工作区。"
+        description="请先从会话列表进入某个写作工作台，再继续对话、改写和编辑正文。"
       />
     </template>
     <template v-else-if="messages.length === 0">
@@ -89,7 +89,7 @@ function renderMessage(message: ChatMessage) {
 .writing-message-list {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   min-height: 100%;
 }
 
@@ -100,7 +100,22 @@ function renderMessage(message: ChatMessage) {
 .writing-message-list__item {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
-  gap: 12px;
+  gap: 14px;
+  align-items: start;
+}
+
+.writing-message-list__item.is-user {
+  grid-template-columns: minmax(0, 1fr) 38px;
+}
+
+.writing-message-list__item.is-user .writing-message-list__avatar {
+  order: 2;
+}
+
+.writing-message-list__item.is-user .writing-message-list__bubble-wrap {
+  align-items: flex-end;
+  order: 1;
+  margin-left: auto;
 }
 
 .writing-message-list__avatar {
@@ -110,7 +125,7 @@ function renderMessage(message: ChatMessage) {
   width: 38px;
   height: 38px;
   color: var(--w-text-primary);
-  background: var(--w-gray-100);
+  background: #ece6db;
   border-radius: 999px;
 }
 
@@ -123,22 +138,24 @@ function renderMessage(message: ChatMessage) {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: min(100%, 760px);
   min-width: 0;
 }
 
 .writing-message-list__bubble {
-  padding: 14px 16px;
-  line-height: 1.75;
+  padding: 16px 18px;
+  line-height: 1.8;
   color: var(--w-text-primary);
   white-space: pre-wrap;
   background: var(--w-color-white);
   border: 1px solid var(--w-divider);
-  border-radius: var(--w-radius-lg);
+  border-radius: 18px;
   box-shadow: var(--w-shadow-xs);
 }
 
 .is-user .writing-message-list__bubble {
   background: var(--w-message-user-bg);
+  border-color: #e5ddcf;
 }
 
 .is-sending .writing-message-list__bubble {

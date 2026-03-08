@@ -22,7 +22,7 @@ const formType = ref<'login' | 'register' | 'resetPassword'>('login')
     <div class="login-page__background" />
     <div class="login-page__shell">
       <section class="login-page__brand">
-        <img src="@/assets/images/logo.svg" alt="公文写作系统" class="login-page__logo">
+        <img src="/brand-mark.svg" alt="公文写作系统" class="login-page__logo">
         <div class="login-page__brand-copy">
           <p class="login-page__eyebrow">
             写作工作台

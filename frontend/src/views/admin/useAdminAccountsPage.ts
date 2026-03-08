@@ -217,6 +217,7 @@ export function useAdminAccountsPage() {
   }
 
   async function changeUserRoles(row: AccountUser, nextCodes: string[]) {
+    const previousRole = row.role
     const previousCodes = [...row.role_codes]
     const previousRoles = [...row.roles]
     row.role_codes = [...nextCodes]
@@ -232,10 +233,14 @@ export function useAdminAccountsPage() {
         await userStore.getPermissions()
       }
       ElMessage.success('角色绑定已更新')
+      return true
     }
     catch {
+      row.role = previousRole
       row.role_codes = previousCodes
       row.roles = previousRoles
+      ElMessage.error('角色绑定更新失败')
+      return false
     }
     finally {
       savingUserId.value = 0

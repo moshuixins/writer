@@ -20,7 +20,8 @@
     "lint:eslint": "eslint . --cache --fix",
     "lint:stylelint": "stylelint \"src/**/*.{css,scss,vue}\" --cache --fix",
     "preinstall": "npx only-allow pnpm",
-    "postinstall": "simple-git-hooks"
+    "postinstall": "simple-git-hooks",
+    "test:visual": "tsx scripts/visual-regression.ts"
   },
   "dependencies": {
     "@tinymce/tinymce-vue": "^6.3.0",
@@ -75,6 +76,7 @@
     "http-server": "^14.1.1",
     "lint-staged": "^16.2.7",
     "npm-run-all2": "^8.0.4",
+    "playwright": "^1.56.1",
     "postcss": "^8.5.6",
     "postcss-nested": "^7.0.2",
     "sass-embedded": "^1.97.1",
@@ -97,7 +99,6 @@
     "vite-plugin-archiver": "^0.2.0",
     "vite-plugin-compression2": "^2.4.0",
     "vite-plugin-env-parse": "^1.0.15",
-    "vite-plugin-svg-icons": "^2.0.1",
     "vite-plugin-vue-devtools": "^8.0.7",
     "vue-tsc": "^3.2.1"
   },

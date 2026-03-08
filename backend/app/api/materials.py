@@ -17,6 +17,7 @@ from app.database import get_db
 from app.errors import logger
 from app.models.book_source import BookSource
 from app.models.user import User
+from app.prompts.doc_types_catalog import DOC_TYPE_CHOICES_TEXT
 from app.prompts.material_analysis import MATERIAL_ANALYSIS_PROMPT
 from app.prompts.validators import (
     ensure_canonical_doc_type,
@@ -105,7 +106,11 @@ async def upload_material(
         fallback_title = await asyncio.to_thread(svc.guess_title, content_text, file.filename)
         raw_analysis = (
             await llm.invoke_async(
-                MATERIAL_ANALYSIS_PROMPT.format(filename=file.filename, content=content_text[:8000]),
+                MATERIAL_ANALYSIS_PROMPT.format(
+                    doc_type_choices=DOC_TYPE_CHOICES_TEXT,
+                    filename=file.filename,
+                    content=content_text[:8000],
+                ),
             )
         ).strip()
         parsed = parse_json_response(raw_analysis, silent=True)

@@ -43,18 +43,11 @@ defineExpose({
 
 <template>
   <div class="writing-editor-pane">
-    <div class="writing-editor-pane__meta">
-      <h3 class="writing-editor-pane__title">
-        正文草稿
-      </h3>
-      <span v-if="currentSession" class="writing-editor-pane__hint">编辑器与当前会话绑定，支持自动保存和引用选中文本。</span>
-    </div>
-
     <template v-if="!currentSession">
       <EmptyState
         icon="i-ep:document"
         title="请先选择会话"
-        description="选择左侧会话后，编辑器会加载当前草稿，并支持自动保存与引用选中文本。"
+        description="进入某个写作会话后，编辑器会加载当前草稿，并支持自动保存与引用选中文本。"
       />
     </template>
     <template v-else-if="loadingDraft">
@@ -84,30 +77,9 @@ defineExpose({
 <style scoped>
 .writing-editor-pane {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 16px;
-  height: 100%;
   min-height: 0;
-}
-
-.writing-editor-pane__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.writing-editor-pane__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--w-text-primary);
-}
-
-.writing-editor-pane__hint {
-  font-size: 12px;
-  color: var(--w-text-secondary);
 }
 
 .writing-editor-pane__body {

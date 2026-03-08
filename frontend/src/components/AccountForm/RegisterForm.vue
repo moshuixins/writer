@@ -69,7 +69,7 @@ const onSubmit = form.handleSubmit(async (values) => {
           创建账号
         </h3>
         <p class="text-sm text-muted-foreground lg:text-base">
-          注册后即可使用公文写作助手
+          注册后即可使用公文写作系统
         </p>
       </div>
       <FormField v-slot="{ componentField, errors }" name="account">
@@ -119,7 +119,7 @@ const onSubmit = form.handleSubmit(async (values) => {
         注册
       </FaButton>
       <div class="mt-4 flex-center gap-2 text-sm">
-        <span class="text-secondary-foreground op-50">已经有帐号?</span>
+        <span class="text-secondary-foreground op-50">已经有账号？</span>
         <FaButton variant="link" class="h-auto p-0" @click="emits('onLogin', form.values.account)">
           去登录
         </FaButton>

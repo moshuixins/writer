@@ -47,7 +47,7 @@ function resolveManualChunk(id: string) {
 // https://vitejs.dev/config/
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd())
-  // ?? scss ??
+  // 自动注入全局 SCSS 资源
   const scssResources: string[] = []
   fs.readdirSync('src/assets/styles/resources').forEach((dirname) => {
     if (fs.statSync(`src/assets/styles/resources/${dirname}`).isFile()) {
@@ -55,7 +55,7 @@ export default defineConfig(({ mode, command }) => {
     }
   })
   return {
-    // ??????? https://cn.vitejs.dev/config/server-options
+    // 开发服务器配置 https://cn.vitejs.dev/config/server-options
     server: {
       open: true,
       host: true,
@@ -72,7 +72,7 @@ export default defineConfig(({ mode, command }) => {
         },
       },
     },
-    // ???? https://cn.vitejs.dev/config/build-options
+    // 构建配置 https://cn.vitejs.dev/config/build-options
     build: {
       outDir: ['production', 'release'].includes(mode) ? 'dist' : `dist-${mode}`,
       sourcemap: env.VITE_BUILD_SOURCEMAP === 'true',

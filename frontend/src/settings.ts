@@ -10,7 +10,7 @@ const globalSettings: Settings.all = {
   },
   home: {
     enable: true,
-    title: '\u516C\u6587\u5199\u4F5C\u52A9\u624B',
+    title: '写作会话',
     fullPath: '/chat',
   },
   menu: {

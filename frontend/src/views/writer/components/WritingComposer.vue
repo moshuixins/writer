@@ -24,16 +24,21 @@ const emit = defineEmits<{
       @update:model-value="value => emit('update:modelValue', String(value))"
       @keyup.ctrl.enter="emit('send')"
     />
-    <div class="writing-composer__actions">
-      <el-button type="primary" :loading="sending" :disabled="sending || !modelValue.trim()" @click="emit('send')">
-        发送请求
-      </el-button>
-      <el-button v-if="sending" @click="emit('stop')">
-        停止生成
-      </el-button>
-      <el-button :disabled="!hasSession || sending" @click="emit('export')">
-        导出 docx
-      </el-button>
+    <div class="writing-composer__footer">
+      <div class="writing-composer__hint">
+        当前输入将作为本轮写作请求提交到 AI 工作流。
+      </div>
+      <div class="writing-composer__actions">
+        <el-button type="primary" :loading="sending" :disabled="sending || !modelValue.trim()" @click="emit('send')">
+          发送请求
+        </el-button>
+        <el-button v-if="sending" @click="emit('stop')">
+          停止生成
+        </el-button>
+        <el-button :disabled="!hasSession || sending" @click="emit('export')">
+          导出 docx
+        </el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -42,9 +47,22 @@ const emit = defineEmits<{
 .writing-composer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-top: 16px;
+  gap: 14px;
+  padding-top: 18px;
   border-top: 1px solid var(--w-divider);
+}
+
+.writing-composer__footer {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.writing-composer__hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--w-text-secondary);
 }
 
 .writing-composer__actions {
@@ -52,5 +70,17 @@ const emit = defineEmits<{
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .writing-composer__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .writing-composer__actions {
+    justify-content: flex-start;
+  }
 }
 </style>

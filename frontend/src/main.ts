@@ -5,7 +5,6 @@ import router from './router'
 import pinia from './store'
 import uiProvider from './ui/provider'
 
-import 'virtual:svg-icons-register'
 import '@unocss/reset/tailwind-compat.css'
 import 'virtual:uno.css'
 import '@/assets/styles/globals.css'

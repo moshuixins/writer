@@ -22,22 +22,21 @@ const visibleGroups = computed(() => {
     .filter(group => group.items.length > 0)
 })
 
+function matchesNavPath(path: string) {
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
+
 const currentNavItem = computed(() => {
   return visibleGroups.value
     .flatMap(group => group.items.map(item => ({ ...item, groupTitle: group.title })))
-    .find(item => route.path === item.path)
+    .sort((left, right) => right.path.length - left.path.length)
+    .find(item => matchesNavPath(item.path))
 })
 
 const currentSectionTitle = computed(() => currentNavItem.value?.groupTitle || '工作台')
-const currentRouteTitle = computed(() => {
-  if (typeof route.meta.title === 'string' && route.meta.title) {
-    return route.meta.title
-  }
-  return currentNavItem.value?.title || '页面信息'
-})
 
 function isActive(path: string) {
-  return route.path === path
+  return matchesNavPath(path)
 }
 
 async function go(path: string) {
@@ -58,9 +57,7 @@ watch(() => route.fullPath, () => {
 
     <aside class="app-shell__sidebar" :class="{ 'is-open': mobileMenuOpen }">
       <div class="app-shell__brand">
-        <div class="app-shell__brand-mark">
-          W
-        </div>
+        <img src="/brand-mark.svg" alt="公文写作系统" class="app-shell__brand-mark">
         <div class="app-shell__brand-text">
           <strong>公文写作系统</strong>
           <span>写作工作区与管理后台</span>
@@ -81,7 +78,7 @@ watch(() => route.fullPath, () => {
             @click="go(item.path)"
           >
             <FaIcon :name="item.icon" class="app-shell__nav-icon" />
-            <span>{{ item.title }}</span>
+            <span class="app-shell__nav-label">{{ item.title }}</span>
           </button>
         </section>
       </nav>
@@ -104,18 +101,13 @@ watch(() => route.fullPath, () => {
           <button class="app-shell__menu-trigger" type="button" @click="mobileMenuOpen = true">
             <FaIcon name="i-ep:menu" />
           </button>
-          <div class="app-shell__topbar-title-wrap">
-            <div class="app-shell__topbar-section">
-              {{ currentSectionTitle }}
-            </div>
-            <h1 class="app-shell__topbar-title">
-              {{ currentRouteTitle }}
-            </h1>
+          <div class="app-shell__topbar-section">
+            {{ currentSectionTitle }}
           </div>
         </div>
         <div class="app-shell__topbar-actions">
           <div class="app-shell__topbar-summary">
-            <span>{{ userStore.user?.display_name || userStore.account || '未登录用户' }}</span>
+            <span class="app-shell__topbar-summary-primary">{{ userStore.user?.display_name || userStore.account || '未登录用户' }}</span>
             <span>{{ userStore.user?.department || '未设置部门' }}</span>
           </div>
           <AppUserMenu />
@@ -136,7 +128,11 @@ watch(() => route.fullPath, () => {
 <style scoped>
 .app-shell {
   display: flex;
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
   color: var(--w-text-primary);
   background: var(--w-shell-bg);
 }
@@ -149,44 +145,46 @@ watch(() => route.fullPath, () => {
 }
 
 .app-shell__sidebar {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 50;
   display: flex;
+  flex: 0 0 var(--w-sidebar-width);
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   width: var(--w-sidebar-width);
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
-  padding: 20px 16px 16px;
+  min-height: 100dvh;
+  padding: 18px 14px 14px;
+  overflow: hidden;
   color: var(--w-shell-sidebar-text);
-  background: radial-gradient(circle at top, var(--w-shell-sidebar-glow) 0%, transparent 32%), var(--w-shell-sidebar-bg);
+  background: radial-gradient(circle at top, var(--w-shell-sidebar-glow) 0%, transparent 34%), var(--w-shell-sidebar-bg);
+  border-right: 1px solid rgb(255 255 255 / 5%);
 }
 
 .app-shell__brand {
   display: flex;
   gap: 12px;
   align-items: center;
-  padding: 10px 10px 14px;
+  padding: 10px 10px 16px;
   border-bottom: 1px solid var(--w-shell-sidebar-border);
 }
 
 .app-shell__brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--w-shell-sidebar-active-text);
+  width: 38px;
+  height: 38px;
+  padding: 6px;
+  object-fit: contain;
   background: var(--w-shell-sidebar-active-bg);
-  border-radius: 12px;
+  border-radius: 11px;
 }
 
 .app-shell__brand-text {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 
 .app-shell__brand-text strong {
@@ -204,6 +202,10 @@ watch(() => route.fullPath, () => {
   flex: 1;
   flex-direction: column;
   gap: 18px;
+  min-height: 0;
+  padding-right: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .app-shell__nav-group {
@@ -222,6 +224,7 @@ watch(() => route.fullPath, () => {
 }
 
 .app-shell__nav-item {
+  position: relative;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -232,32 +235,48 @@ watch(() => route.fullPath, () => {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 14px;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .app-shell__nav-item:hover {
   background: var(--w-shell-sidebar-card);
   border-color: var(--w-shell-sidebar-border);
-  transform: translateX(2px);
 }
 
 .app-shell__nav-item.is-active {
   color: var(--w-shell-sidebar-active-text);
   background: var(--w-shell-sidebar-active-bg);
+  border-color: rgb(17 17 17 / 6%);
+}
+
+.app-shell__nav-item.is-active::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 8px;
+  width: 3px;
+  content: "";
+  background: var(--w-color-black);
+  border-radius: 999px;
 }
 
 .app-shell__nav-icon {
   font-size: 18px;
 }
 
+.app-shell__nav-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .app-shell__sidebar-foot {
-  padding-top: 6px;
+  padding-top: 8px;
 }
 
 .app-shell__account-card {
-  padding: 14px;
-  background: var(--w-shell-sidebar-card);
-  border: 1px solid var(--w-shell-sidebar-border);
+  padding: 12px 14px;
+  background: rgb(255 255 255 / 2.5%);
+  border: 1px solid rgb(255 255 255 / 6%);
   border-radius: 16px;
 }
 
@@ -279,25 +298,26 @@ watch(() => route.fullPath, () => {
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app-shell__topbar {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 30;
   display: flex;
   gap: 16px;
   align-items: center;
   justify-content: space-between;
   min-height: var(--w-topbar-height);
-  padding: 16px 24px;
+  padding: 12px 24px;
   background: var(--w-shell-topbar-bg);
   border-bottom: 1px solid var(--w-shell-topbar-border);
 }
 
-@supports (backdrop-filter: blur(12px)) {
+@supports (backdrop-filter: blur(10px)) {
   .app-shell__topbar {
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(10px);
   }
 }
 
@@ -308,25 +328,13 @@ watch(() => route.fullPath, () => {
   align-items: center;
 }
 
-.app-shell__topbar-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .app-shell__topbar-section {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--w-text-tertiary);
+  line-height: 1.4;
+  color: var(--w-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-.app-shell__topbar-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.25;
+  letter-spacing: 0.08em;
 }
 
 .app-shell__topbar-summary {
@@ -338,6 +346,11 @@ watch(() => route.fullPath, () => {
   color: var(--w-text-secondary);
 }
 
+.app-shell__topbar-summary-primary {
+  font-weight: 700;
+  color: var(--w-text-primary);
+}
+
 .app-shell__menu-trigger {
   display: none;
   align-items: center;
@@ -345,7 +358,7 @@ watch(() => route.fullPath, () => {
   width: 40px;
   height: 40px;
   color: var(--w-text-primary);
-  background: var(--w-color-white);
+  background: rgb(255 253 249 / 88%);
   border: 1px solid var(--w-divider);
   border-radius: 12px;
 }
@@ -353,6 +366,9 @@ watch(() => route.fullPath, () => {
 .app-shell__canvas {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   background: var(--w-shell-canvas-bg);
 }
 
@@ -390,11 +406,7 @@ watch(() => route.fullPath, () => {
 
 @media (max-width: 768px) {
   .app-shell__topbar {
-    padding: 14px 16px;
-  }
-
-  .app-shell__topbar-title {
-    font-size: 18px;
+    padding: 12px 16px;
   }
 
   .app-shell__topbar-summary {

@@ -1,7 +1,20 @@
-import type { RouteRecordRaw } from 'vue-router'
+import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router'
 
 function Layout() {
   return import('@/layouts/index.vue')
+}
+
+function redirectLegacyChatQuery(to: RouteLocationNormalized) {
+  const rawSessionId = Array.isArray(to.query.session_id) ? to.query.session_id[0] : to.query.session_id
+  const sessionId = Number(rawSessionId)
+  if (!Number.isFinite(sessionId) || sessionId <= 0) {
+    return true
+  }
+  return {
+    name: 'writerWorkspace',
+    params: { sessionId },
+    replace: true,
+  }
 }
 
 const routes: RouteRecordRaw = {
@@ -16,9 +29,19 @@ const routes: RouteRecordRaw = {
     {
       path: '/chat',
       name: 'writerChat',
-      component: () => import('@/views/writer/WritingChat.vue'),
+      component: () => import('@/views/writer/WritingSessionsHome.vue'),
+      beforeEnter: to => redirectLegacyChatQuery(to),
       meta: {
-        title: '写作对话',
+        title: '写作会话',
+        icon: 'i-ep:chat-dot-round',
+      },
+    },
+    {
+      path: '/chat/:sessionId(\d+)',
+      name: 'writerWorkspace',
+      component: () => import('@/views/writer/WritingWorkspace.vue'),
+      meta: {
+        title: '写作工作台',
         icon: 'i-ep:chat-dot-round',
       },
     },
@@ -54,7 +77,7 @@ const routes: RouteRecordRaw = {
       name: 'writerSettings',
       component: () => import('@/views/writer/Settings.vue'),
       meta: {
-        title: '偏好设置',
+        title: '写作偏好',
         icon: 'i-ep:setting',
       },
     },
