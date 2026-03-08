@@ -21,7 +21,12 @@
     "lint:stylelint": "stylelint \"src/**/*.{css,scss,vue}\" --cache --fix",
     "preinstall": "npx only-allow pnpm",
     "postinstall": "simple-git-hooks",
-    "test:visual": "tsx scripts/visual-regression.ts"
+    "test:visual": "tsx scripts/visual-regression.ts",
+    "generate:openapi": "tsx scripts/generate-openapi.ts",
+    "lint:eslint:check": "eslint .",
+    "lint:stylelint:check": "stylelint \"src/**/*.{css,scss,vue}\"",
+    "verify:openapi": "tsx scripts/verify-openapi.ts",
+    "guard:pre-push": "pnpm run verify:openapi && pnpm run test:permissions"
   },
   "dependencies": {
     "@tinymce/tinymce-vue": "^6.3.0",
@@ -76,6 +81,7 @@
     "http-server": "^14.1.1",
     "lint-staged": "^16.2.7",
     "npm-run-all2": "^8.0.4",
+    "openapi-typescript": "^7.10.1",
     "playwright": "^1.56.1",
     "postcss": "^8.5.6",
     "postcss-nested": "^7.0.2",
@@ -103,7 +109,8 @@
     "vue-tsc": "^3.2.1"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged",
-    "preserveUnused": true
+    "pre-commit": "cd frontend && pnpm exec lint-staged",
+    "preserveUnused": true,
+    "pre-push": "pnpm -C frontend run guard:pre-push"
   }
 }

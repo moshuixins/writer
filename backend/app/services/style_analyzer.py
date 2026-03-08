@@ -17,7 +17,7 @@ from app.services.llm_service import LLMService
 class StyleAnalyzer:
     """Analyze writing style and store per-account style features."""
 
-    def __init__(self, db: Session, *, account_id: int = 1):
+    def __init__(self, db: Session | None = None, *, account_id: int = 1):
         self.db = db
         self.account_id = int(account_id or 1)
         self.llm = LLMService()
@@ -75,19 +75,22 @@ class StyleAnalyzer:
             logger.warning("Style LLM analysis failed: %s", e)
             return {"raw_analysis": "分析失败"}
 
-    def analyze_and_store(self, text: str, doc_type: str):
-        stats = self.analyze_statistics(text)
-        vocab = self.analyze_vocabulary(text)
-        llm_analysis = self.analyze_with_llm(text)
-
-        features = {
-            "statistics": stats,
-            "vocabulary": vocab,
-            "llm_analysis": llm_analysis,
+    def analyze(self, text: str) -> dict:
+        return {
+            "statistics": self.analyze_statistics(text),
+            "vocabulary": self.analyze_vocabulary(text),
+            "llm_analysis": self.analyze_with_llm(text),
         }
 
+    def _require_db(self) -> Session:
+        if self.db is None:
+            raise RuntimeError("database session required for style persistence")
+        return self.db
+
+    def store_analysis(self, doc_type: str, features: dict, *, commit: bool = True) -> dict:
+        db = self._require_db()
         for name, value in features.items():
-            existing = self.db.query(StyleProfile).filter(
+            existing = db.query(StyleProfile).filter(
                 StyleProfile.account_id == self.account_id,
                 StyleProfile.doc_type == doc_type,
                 StyleProfile.feature_name == name,
@@ -104,13 +107,21 @@ class StyleAnalyzer:
                     feature_value=value,
                     sample_count=1,
                 )
-                self.db.add(profile)
+                db.add(profile)
 
-        self.db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         return features
 
+    def analyze_and_store(self, text: str, doc_type: str, *, commit: bool = True):
+        features = self.analyze(text)
+        return self.store_analysis(doc_type, features, commit=commit)
+
     def get_style_guidelines(self, doc_type: str) -> str:
-        profiles = self.db.query(StyleProfile).filter(
+        db = self._require_db()
+        profiles = db.query(StyleProfile).filter(
             StyleProfile.account_id == self.account_id,
             StyleProfile.doc_type == doc_type,
         ).all()
@@ -174,4 +185,4 @@ class StyleAnalyzer:
                         if line_parts:
                             parts.append(f"- 数据要素：{'；'.join(line_parts)}")
 
-        return "\n".join(parts) if parts else "暂无风格数据"
+        return "\n".join(parts) if parts else "暂无风格数据"

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import threading
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -12,12 +12,12 @@ import jieba.analyse
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import SessionLocal
 from app.errors import FileValidationError, logger
 from app.models.book_source import BookSource
 from app.models.book_style_rule import BookStyleRule
 from app.prompts.doc_types_catalog import DOC_TYPE_CHOICES_TEXT, OTHER_DOC_TYPE
 from app.prompts.validators import parse_json_response, validate_classify, validate_keywords, validate_title
+from app.services.book_import_dispatcher import book_import_dispatcher
 from app.services.book_import_task_service import book_import_task_tracker
 from app.services.book_rule_service import BookRuleService
 from app.services.context_bridge import ContextBridge
@@ -28,6 +28,8 @@ from app.services.pdf_ocr_service import PdfOcrService
 settings = get_settings()
 
 SUPPORTED_BOOK_EXTS = {".epub", ".pdf"}
+MAX_BOOK_UPLOAD_SIZE = 200 * 1024 * 1024
+BOOK_UPLOAD_DIRNAME = "imports"
 
 BOOK_ANALYSIS_PROMPT = """你是“公文写作知识提炼助手”。请基于输入书籍内容，做结构化提炼。
 只允许输出 JSON 对象，不要 markdown，不要解释。禁止直接搬运书中原句；只能提炼写法规则、结构套路和表达要点。
@@ -91,6 +93,58 @@ class BookImportService:
     @staticmethod
     def _books_root() -> Path:
         return Path(settings.books_dir).resolve()
+
+    @classmethod
+    def _books_upload_root(cls) -> Path:
+        root = cls._books_root() / BOOK_UPLOAD_DIRNAME
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    @staticmethod
+    def _sanitize_upload_filename(filename: str) -> str:
+        raw_name = Path(filename or '').name.strip()
+        ext = Path(raw_name).suffix.lower()
+        stem = Path(raw_name).stem.strip()
+        if not stem:
+            stem = 'book'
+        stem = re.sub(r'[^0-9A-Za-z一-鿿._-]+', '-', stem)
+        stem = stem.strip(' ._-') or 'book'
+        return f'{stem}{ext}'
+
+    def save_book_upload(self, file_bytes: bytes, filename: str) -> dict[str, Any]:
+        if len(file_bytes) > MAX_BOOK_UPLOAD_SIZE:
+            raise FileValidationError(f'文件大小超过限制（最大 {MAX_BOOK_UPLOAD_SIZE // 1024 // 1024}MB）')
+
+        ext = Path(filename or '').suffix.lower()
+        if ext not in SUPPORTED_BOOK_EXTS:
+            raise FileValidationError('不支持的文件格式，仅支持 .epub、.pdf')
+
+        upload_root = self._books_upload_root()
+        safe_name = self._sanitize_upload_filename(filename)
+        destination = upload_root / safe_name
+        if destination.exists():
+            stem = destination.stem
+            suffix = destination.suffix
+            index = 2
+            while destination.exists():
+                destination = upload_root / f'{stem}-{index}{suffix}'
+                index += 1
+
+        destination.write_bytes(file_bytes)
+        relative_path = destination.relative_to(self._books_root()).as_posix()
+        return {
+            'source_name': destination.name,
+            'relative_path': relative_path,
+            'absolute_path': str(destination),
+            'file_ext': destination.suffix.lower(),
+            'file_size': int(destination.stat().st_size),
+            'source_hash': self._sha256_file(destination),
+            'imported': False,
+            'status': 'pending',
+            'doc_type': '',
+            'updated_at': None,
+            'source_id': None,
+        }
 
     @staticmethod
     def _sha256_file(file_path: Path) -> str:
@@ -164,6 +218,29 @@ class BookImportService:
                 item["source_id"] = None
         return file_rows
 
+    @staticmethod
+    def _normalize_selected_files(selected_files: list[str] | None) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in selected_files or []:
+            value = str(item or '').strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        return normalized
+
+    @classmethod
+    def _select_scanned_files(cls, scanned: list[dict[str, Any]], selected_files: list[str] | None) -> list[dict[str, Any]]:
+        selected_refs = set(cls._normalize_selected_files(selected_files))
+        if not selected_refs:
+            return list(scanned)
+        return [
+            item
+            for item in scanned
+            if item['source_name'] in selected_refs or item['relative_path'] in selected_refs
+        ]
+
     def start_import_task(
         self,
         *,
@@ -171,19 +248,11 @@ class BookImportService:
         selected_files: list[str] | None = None,
     ) -> tuple[str, int]:
         if self.db is None:
-            raise RuntimeError("database session required")
+            raise RuntimeError('database session required')
 
         scanned = self.scan_books()
-        selected_names = {(item or "").strip() for item in (selected_files or []) if (item or "").strip()}
-
-        if selected_names:
-            selected = [
-                item
-                for item in scanned
-                if item["source_name"] in selected_names or item["relative_path"] in selected_names
-            ]
-        else:
-            selected = scanned
+        selected_refs = self._normalize_selected_files(selected_files)
+        selected = self._select_scanned_files(scanned, selected_refs)
 
         task_id = uuid.uuid4().hex
         reserved, active_task_id = book_import_task_tracker.reserve_slot(
@@ -191,41 +260,38 @@ class BookImportService:
             account_id=self.account_id,
         )
         if not reserved:
-            raise BookImportConflictError(active_task_id or "")
+            raise BookImportConflictError(active_task_id or '')
 
         book_import_task_tracker.create_task(
             task_id,
             total_files=len(selected),
             rebuild=rebuild,
             account_id=self.account_id,
+            selected_files=selected_refs,
         )
-
-        worker_thread = threading.Thread(
-            target=self._run_in_background,
-            args=(task_id, selected, rebuild, self.account_id),
-            daemon=True,
-        )
-        worker_thread.start()
+        if not book_import_dispatcher.dispatch(task_id, account_id=self.account_id):
+            book_import_task_tracker.fail(task_id, message='任务调度失败，请稍后重试')
+            raise RuntimeError('book import task dispatch failed')
         return task_id, len(selected)
 
-    @classmethod
-    def _run_in_background(
-        cls,
-        task_id: str,
-        selected_files: list[dict[str, Any]],
-        rebuild: bool,
-        account_id: int,
-    ) -> None:
-        db = SessionLocal()
-        worker = cls(db, account_id=account_id)
-        try:
-            asyncio.run(worker._execute_import(task_id, selected_files, rebuild))
-        except Exception as e:
-            error_id = _new_error_id()
-            logger.exception("Book import task crashed. error_id=%s err=%s", error_id, e)
-            book_import_task_tracker.fail(task_id, message=_public_error_message(error_id))
-        finally:
-            db.close()
+    async def execute_task(self, task_id: str) -> None:
+        task_state = book_import_task_tracker.claim_task(task_id)
+        if task_state is None:
+            logger.info('Book import task skipped because another task is active: %s', task_id)
+            return
+
+        rebuild = bool(task_state.get('rebuild', False))
+        selected_refs = self._normalize_selected_files(task_state.get('selected_files', []))
+        scanned = self.scan_books()
+        selected = self._select_scanned_files(scanned, selected_refs)
+        book_import_task_tracker.restart(
+            task_id,
+            total_files=len(selected),
+            selected_files=selected_refs,
+            stage='准备导入',
+            message='任务已启动',
+        )
+        await self._execute_import(task_id, selected, rebuild)
 
     async def _execute_import(self, task_id: str, selected_files: list[dict[str, Any]], rebuild: bool) -> None:
         if not selected_files:
@@ -480,6 +546,7 @@ class BookImportService:
         ocr_used: bool,
         error_message: str,
         metadata: dict[str, Any],
+        commit: bool = True,
     ) -> BookSource:
         row = existing or BookSource(
             account_id=self.account_id,
@@ -505,8 +572,10 @@ class BookImportService:
         row.metadata_ = metadata
         if existing is None:
             self.db.add(row)
-        self.db.commit()
-        self.db.refresh(row)
+        self.db.flush()
+        if commit:
+            self.db.commit()
+            self.db.refresh(row)
         return row
 
     async def _process_one_file(self, task_id: str, file_item: dict[str, Any], rebuild: bool) -> None:
@@ -634,13 +703,17 @@ class BookImportService:
                 ocr_used=ocr_used,
                 error_message=first_error,
                 metadata=metadata,
+                commit=False,
             )
 
             BookRuleService(self.db, account_id=self.account_id).replace_rules(
                 source_id=source_row.id,
                 doc_type=doc_type,
                 rules=style_rules,
+                commit=False,
             )
+            self.db.commit()
+            self.db.refresh(source_row)
 
             book_import_task_tracker.update(
                 task_id,
@@ -659,6 +732,7 @@ class BookImportService:
                 },
             )
         except Exception as e:
+            self.db.rollback()
             err_id = _new_error_id()
             public_message = _public_error_message(err_id)
             logger.exception("Book import failed. error_id=%s source=%s err=%s", err_id, source_name, e)

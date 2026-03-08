@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import asyncio
-import threading
-import uuid
 from pathlib import Path
-from typing import Generator, Literal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -13,21 +10,32 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_permission
 from app.database import get_db
-from app.errors import logger
+from app.errors import AppError, logger
+from app.side_effects import collect_side_effect_warning, new_error_id
 from app.models.user import User
 from app.prompts.doc_types_catalog import OTHER_DOC_TYPE
 from app.prompts.validators import ensure_canonical_doc_type
+from app.schemas.chat import (
+    ChatMessageListResponse,
+    ChatReplyResponse,
+    ChatSessionListResponse,
+    ChatSessionResponse,
+    ChatSessionWithWarningsResponse,
+    ReviewResponse,
+    SessionDraftResponse,
+)
+from app.schemas.common import MessageResponse
 from app.serializers import (
-    serialize_chat_chunk_sse,
-    serialize_chat_done_sse,
-    serialize_chat_error_sse,
     serialize_chat_message,
     serialize_chat_reply,
     serialize_chat_session,
-    serialize_chat_workflow_sse,
+    serialize_collection_response,
+    serialize_review_response,
     serialize_draft_response,
     serialize_message_response,
 )
+from app.services.chat_stream_service import ChatStreamService
+from app.services.chat_turn_service import ChatTurnService
 from app.services.context_bridge import ContextBridge
 from app.services.draft_service import DraftService
 from app.services.writing_service import WritingService
@@ -35,39 +43,24 @@ from app.services.writing_service import WritingService
 router = APIRouter()
 ctx_bridge = ContextBridge()
 
+CHAT_STREAM_RESPONSE = {
+    200: {
+        "description": "SSE stream of workflow, chunk, error, and final events.",
+        "content": {
+            "text/event-stream": {
+                "schema": {
+                    "type": "string",
+                    "example": 'data: {"event":"workflow","step":"分析请求意图","status":"running"}\n\ndata: [DONE]\n\n',
+                },
+            },
+        },
+    },
+}
+
 DEFAULT_BODY_JSON = {
     "type": "doc",
     "content": [{"type": "paragraph"}],
 }
-
-
-def _new_error_id() -> str:
-    return uuid.uuid4().hex[:12]
-
-
-async def _iterate_sync_generator(gen: Generator[str, None, None]):
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[tuple[str, str | Exception | None]] = asyncio.Queue()
-
-    def worker() -> None:
-        try:
-            for item in gen:
-                loop.call_soon_threadsafe(queue.put_nowait, ("chunk", item))
-        except Exception as e:
-            loop.call_soon_threadsafe(queue.put_nowait, ("error", e))
-        finally:
-            loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
-
-    threading.Thread(target=worker, daemon=True).start()
-
-    while True:
-        kind, payload = await queue.get()
-        if kind == "chunk":
-            yield str(payload or "")
-            continue
-        if kind == "error":
-            raise payload if isinstance(payload, Exception) else RuntimeError("stream failed")
-        break
 
 
 class CreateSessionRequest(BaseModel):
@@ -102,7 +95,7 @@ class ReviewRequest(BaseModel):
     doc_type: str = OTHER_DOC_TYPE
 
 
-@router.post("/sessions")
+@router.post("/sessions", response_model=ChatSessionWithWarningsResponse)
 async def create_session(
     req: CreateSessionRequest,
     db: Session = Depends(get_db),
@@ -116,23 +109,36 @@ async def create_session(
             raise HTTPException(400, "doc_type 非法，必须为规范文种")
 
     svc = WritingService(db, account_id=current_user.account_id)
-    session = svc.create_session(
-        user_id=current_user.id,
-        title=req.title,
-        doc_type=canonical_doc_type,
-    )
-
+    warnings: list[str] = []
     try:
-        ov_session = await ctx_bridge.create_session()
-        session.ov_session_id = ov_session.get("session_id", "")
+        session = svc.create_session(
+            user_id=current_user.id,
+            title=req.title,
+            doc_type=canonical_doc_type,
+            commit=False,
+        )
+        try:
+            ov_session = await ctx_bridge.create_session()
+            session.ov_session_id = ov_session.get("session_id", "")
+        except Exception as e:
+            collect_side_effect_warning(
+                warnings,
+                operation="chat.create_session.sync",
+                public_message="外部会话上下文未创建",
+                error=e,
+                user_id=current_user.id,
+                account_id=current_user.account_id,
+            )
         db.commit()
+        db.refresh(session)
     except Exception:
-        pass
+        db.rollback()
+        raise
 
-    return serialize_chat_session(session, include_status=False, include_created_at=False)
+    return serialize_chat_session(session, warnings=warnings)
 
 
-@router.put("/sessions/{session_id}")
+@router.put("/sessions/{session_id}", response_model=ChatSessionResponse)
 def update_session(
     session_id: int,
     req: UpdateSessionRequest,
@@ -159,17 +165,18 @@ def update_session(
     return serialize_chat_session(session)
 
 
-@router.get("/sessions")
+@router.get("/sessions", response_model=ChatSessionListResponse)
 def list_sessions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("chat:read")),
 ):
     svc = WritingService(db, account_id=current_user.account_id)
     sessions = svc.get_sessions(user_id=current_user.id)
-    return [serialize_chat_session(session) for session in sessions]
+    items = [serialize_chat_session(session) for session in sessions]
+    return serialize_collection_response(items, total=len(items))
 
 
-@router.get("/sessions/{session_id}/messages")
+@router.get("/sessions/{session_id}/messages", response_model=ChatMessageListResponse)
 def get_messages(
     session_id: int,
     db: Session = Depends(get_db),
@@ -187,10 +194,11 @@ def get_messages(
 
     svc = WritingService(db, account_id=current_user.account_id)
     msgs = svc.get_session_messages(session_id)
-    return [serialize_chat_message(message) for message in msgs]
+    items = [serialize_chat_message(message) for message in msgs]
+    return serialize_collection_response(items, total=len(items))
 
 
-@router.get("/sessions/{session_id}/draft")
+@router.get("/sessions/{session_id}/draft", response_model=SessionDraftResponse)
 def get_session_draft(
     session_id: int,
     db: Session = Depends(get_db),
@@ -204,7 +212,7 @@ def get_session_draft(
     return payload
 
 
-@router.put("/sessions/{session_id}/draft")
+@router.put("/sessions/{session_id}/draft", response_model=SessionDraftResponse)
 def save_session_draft(
     session_id: int,
     req: SaveDraftRequest,
@@ -212,12 +220,19 @@ def save_session_draft(
     current_user: User = Depends(require_permission("chat:write")),
 ):
     draft_service = DraftService(db, account_id=current_user.account_id)
-    row, normalized_draft = draft_service.upsert_draft(
-        user_id=current_user.id,
-        session_id=session_id,
-        draft=req.draft.model_dump(),
-        save_mode=req.save_mode,
-    )
+    try:
+        row, normalized_draft = draft_service.upsert_draft(
+            user_id=current_user.id,
+            session_id=session_id,
+            draft=req.draft.model_dump(),
+            save_mode=req.save_mode,
+            commit=False,
+        )
+        db.commit()
+        db.refresh(row)
+    except Exception:
+        db.rollback()
+        raise
     return serialize_draft_response(
         session_id=session_id,
         draft=normalized_draft,
@@ -227,168 +242,65 @@ def save_session_draft(
     )
 
 
-@router.post("/send")
+@router.post("/send", response_model=ChatReplyResponse, response_model_exclude_none=True)
 async def send_message(
     req: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("chat:write")),
 ):
-    from app.models.chat import ChatSession
-
-    session = db.query(ChatSession).filter(
-        ChatSession.account_id == current_user.account_id,
-        ChatSession.id == req.session_id,
-        ChatSession.user_id == current_user.id,
-    ).first()
-    if not session:
-        raise HTTPException(404, "会话不存在")
-
     svc = WritingService(db, account_id=current_user.account_id)
-
-    svc.add_message(req.session_id, "user", req.message)
-
-    ov_sid = getattr(session, "ov_session_id", None)
-    if ov_sid:
-        try:
-            await ctx_bridge.add_message(ov_sid, "user", req.message)
-        except Exception:
-            pass
-
-    msgs = svc.get_session_messages(req.session_id)
-    if len(msgs) <= 1:
-        doc_type = session.doc_type or OTHER_DOC_TYPE
-        reply = await asyncio.to_thread(svc.get_guidance, req.message, doc_type)
-    else:
-        reply = await svc.generate(req.session_id, req.message)
-
-    svc.add_message(req.session_id, "assistant", reply)
-
-    if ov_sid:
-        try:
-            await ctx_bridge.add_message(ov_sid, "assistant", reply)
-        except Exception:
-            pass
-
-    try:
-        await ctx_bridge.add_memory_note(
-            account_id=current_user.account_id,
-            session_id=req.session_id,
-            user_text=req.message,
-            assistant_text=reply,
-        )
-    except Exception as e:
-        logger.warning("Auto memory note skipped: %s", e)
-
-    return serialize_chat_reply(reply)
+    turn_service = ChatTurnService(
+        db,
+        account_id=current_user.account_id,
+        user_id=current_user.id,
+        context_bridge=ctx_bridge,
+    )
+    turn = await turn_service.prepare_turn(
+        req.session_id,
+        req.message,
+        writing_service=svc,
+        stream=False,
+    )
+    reply = await turn_service.generate_reply(turn, req.message, writing_service=svc)
+    await turn_service.complete_turn(
+        turn,
+        user_message=req.message,
+        assistant_text=reply,
+        writing_service=svc,
+        warnings=turn.warnings,
+        stream=False,
+    )
+    return serialize_chat_reply(reply, warnings=turn.warnings)
 
 
-@router.post("/send-stream")
+@router.post("/send-stream", response_class=StreamingResponse, responses=CHAT_STREAM_RESPONSE)
 async def send_message_stream(
     req: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("chat:write")),
 ):
-    from app.models.chat import ChatSession
-
-    session = db.query(ChatSession).filter(
-        ChatSession.account_id == current_user.account_id,
-        ChatSession.id == req.session_id,
-        ChatSession.user_id == current_user.id,
-    ).first()
-    if not session:
-        raise HTTPException(404, "会话不存在")
-
     svc = WritingService(db, account_id=current_user.account_id)
-    svc.add_message(req.session_id, "user", req.message)
-
-    ov_sid = getattr(session, "ov_session_id", None)
-    if ov_sid:
-        try:
-            await ctx_bridge.add_message(ov_sid, "user", req.message)
-        except Exception:
-            pass
-
-    msgs = svc.get_session_messages(req.session_id)
-    is_first = len(msgs) <= 1
-    doc_type = session.doc_type or OTHER_DOC_TYPE
-
-    async def event_generator():
-        full_reply = ""
-        stream_ok = False
-        try:
-            if is_first:
-                yield serialize_chat_workflow_sse("分析写作需求", "running")
-                chunks = svc.guidance_stream(req.message, doc_type)
-                yield serialize_chat_workflow_sse("分析写作需求", "done")
-                yield serialize_chat_workflow_sse("生成写作引导", "running")
-            else:
-                yield serialize_chat_workflow_sse("分析请求意图", "running")
-                yield serialize_chat_workflow_sse("搜索素材", "running")
-                yield serialize_chat_workflow_sse("检索书籍知识", "running")
-                yield serialize_chat_workflow_sse("融合书籍风格规则", "running")
-
-                chunks, meta = await svc.generate_stream_with_meta(req.session_id, req.message)
-
-                yield serialize_chat_workflow_sse(
-                    "搜索素材",
-                    "done",
-                    detail=f"命中 {meta.get('reference_count', 0)} 条素材",
-                )
-                yield serialize_chat_workflow_sse(
-                    "检索书籍知识",
-                    "done",
-                    detail=f"命中 {meta.get('book_reference_count', 0)} 条书籍参考",
-                )
-                yield serialize_chat_workflow_sse(
-                    "融合书籍风格规则",
-                    "done",
-                    detail=f"命中 {meta.get('book_rule_count', 0)} 条规则",
-                )
-                yield serialize_chat_workflow_sse("分析请求意图", "done")
-                yield serialize_chat_workflow_sse("生成回复", "running")
-
-            async for chunk in _iterate_sync_generator(chunks):
-                full_reply += chunk
-                yield serialize_chat_chunk_sse(chunk)
-
-            if is_first:
-                yield serialize_chat_workflow_sse("生成写作引导", "done")
-            else:
-                yield serialize_chat_workflow_sse("生成回复", "done")
-            stream_ok = True
-        except Exception as e:
-            error_id = _new_error_id()
-            logger.exception("Stream error. error_id=%s session=%s err=%s", error_id, req.session_id, e)
-            yield serialize_chat_error_sse(f"流式生成失败（错误ID: {error_id}）")
-
-        if stream_ok and full_reply.strip():
-            svc.add_message(req.session_id, "assistant", full_reply)
-
-            if ov_sid:
-                try:
-                    await ctx_bridge.add_message(ov_sid, "assistant", full_reply)
-                except Exception:
-                    pass
-
-            try:
-                await ctx_bridge.add_memory_note(
-                    account_id=current_user.account_id,
-                    session_id=req.session_id,
-                    user_text=req.message,
-                    assistant_text=full_reply,
-                )
-            except Exception as e:
-                logger.warning("Auto memory note skipped: %s", e)
-
-        yield serialize_chat_done_sse()
+    turn_service = ChatTurnService(
+        db,
+        account_id=current_user.account_id,
+        user_id=current_user.id,
+        context_bridge=ctx_bridge,
+    )
+    turn = await turn_service.prepare_turn(
+        req.session_id,
+        req.message,
+        writing_service=svc,
+        stream=True,
+    )
+    stream_service = ChatStreamService(turn_service=turn_service, writing_service=svc)
     return StreamingResponse(
-        event_generator(),
+        stream_service.stream_turn(turn, req.message),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-@router.delete("/sessions/{session_id}")
+@router.delete("/sessions/{session_id}", response_model=MessageResponse)
 async def delete_session(
     session_id: int,
     db: Session = Depends(get_db),
@@ -428,13 +340,19 @@ async def delete_session(
         db.commit()
     except Exception as e:
         db.rollback()
+        error_id = new_error_id()
         logger.exception(
-            "Delete session failed, session_id=%s user_id=%s err=%s",
+            "Delete session failed. error_id=%s session_id=%s user_id=%s err=%s",
+            error_id,
             session_id,
             current_user.id,
             e,
         )
-        raise HTTPException(500, "删除会话失败，请稍后重试")
+        raise AppError(
+            "删除会话失败，请稍后重试",
+            detail=str(e),
+            error_id=error_id,
+        ) from e
 
     for doc_path in doc_paths:
         try:
@@ -447,7 +365,7 @@ async def delete_session(
     return serialize_message_response("会话已删除")
 
 
-@router.post("/sessions/{session_id}/finish")
+@router.post("/sessions/{session_id}/finish", response_model=MessageResponse)
 async def finish_session(
     session_id: int,
     db: Session = Depends(get_db),
@@ -467,7 +385,7 @@ async def finish_session(
     db.commit()
     return serialize_message_response("会话已结束")
 
-@router.post("/review")
+@router.post("/review", response_model=ReviewResponse)
 def review_document(
     req: ReviewRequest,
     db: Session = Depends(get_db),
@@ -478,4 +396,4 @@ def review_document(
     except ValueError:
         raise HTTPException(400, "doc_type 非法，必须为规范文种")
     svc = WritingService(db, account_id=current_user.account_id)
-    return svc.review(req.content, canonical_doc_type)
+    return serialize_review_response(svc.review(req.content, canonical_doc_type))

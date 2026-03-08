@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -14,26 +12,33 @@ from app.rbac import ROLE_ADMIN
 from app.services.rbac_service import user_has_role
 from app.config import get_settings
 from app.database import get_db
-from app.errors import logger
+from app.errors import AppError, FileValidationError, logger
 from app.models.book_source import BookSource
 from app.models.user import User
-from app.prompts.doc_types_catalog import DOC_TYPE_CHOICES_TEXT
-from app.prompts.material_analysis import MATERIAL_ANALYSIS_PROMPT
-from app.prompts.validators import (
-    ensure_canonical_doc_type,
-    parse_json_response,
-    validate_classify,
-    validate_keywords,
-    validate_title,
+from app.prompts.validators import ensure_canonical_doc_type
+from app.schemas.common import MessageResponse
+from app.schemas.materials import (
+    BookImportStartResponse,
+    BookImportTaskResponse,
+    BookScanResponse,
+    BookSourceListResponse,
+    BookUploadResponse,
+    MaterialListResponse,
+    MaterialResponse,
+    MaterialSearchResponse,
+    MaterialUploadResponse,
+    UploadTaskResponse,
 )
 from app.serializers import (
     serialize_book_import_start_response,
     serialize_book_import_task,
     serialize_book_scan_item,
     serialize_book_source,
+    serialize_book_upload_response,
     serialize_collection_response,
     serialize_material_detail,
     serialize_material_list_item,
+    serialize_material_search_hit,
     serialize_material_upload_result,
     serialize_message_response,
     serialize_upload_task,
@@ -41,17 +46,14 @@ from app.serializers import (
 from app.services.book_import_service import BookImportConflictError, BookImportService
 from app.services.book_import_task_service import book_import_task_tracker
 from app.services.context_bridge import ContextBridge
-from app.services.llm_service import LLMService
+from app.services.material_ingestion_service import MaterialIngestionService
 from app.services.material_service import MaterialService
+from app.side_effects import new_error_id
 from app.services.upload_progress_service import upload_progress_tracker
 
 router = APIRouter()
 ctx_bridge = ContextBridge()
 settings = get_settings()
-
-
-def _new_error_id() -> str:
-    return uuid.uuid4().hex[:12]
 
 
 def _safe_books_dir() -> str:
@@ -64,7 +66,7 @@ def _safe_books_dir() -> str:
     return "data/book"
 
 
-@router.post("/upload")
+@router.post("/upload", response_model=MaterialUploadResponse)
 async def upload_material(
     file: UploadFile = File(...),
     task_id: str | None = Form(None),
@@ -76,9 +78,6 @@ async def upload_material(
     ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
     if ext not in allowed_ext:
         raise HTTPException(400, f"不支持的文件格式，仅支持: {', '.join(sorted(allowed_ext))}")
-
-    svc = MaterialService(db)
-    llm = LLMService()
 
     def update_progress(progress: int, stage: str, status: str = "parsing", message: str = ""):
         if task_id:
@@ -92,103 +91,38 @@ async def upload_material(
             )
 
     try:
-        update_progress(3, "开始解析")
-
         file_bytes = await file.read()
-        file_path = await asyncio.to_thread(svc.save_upload, file_bytes, file.filename, current_user.id)
-        update_progress(12, "文件已保存")
-
-        content_text = await asyncio.to_thread(svc.extract_text, file_path, file.filename)
-        if not content_text.strip():
-            raise HTTPException(400, "文件内容为空，无法处理")
-        update_progress(28, "文本提取完成")
-
-        fallback_title = await asyncio.to_thread(svc.guess_title, content_text, file.filename)
-        raw_analysis = (
-            await llm.invoke_async(
-                MATERIAL_ANALYSIS_PROMPT.format(
-                    doc_type_choices=DOC_TYPE_CHOICES_TEXT,
-                    filename=file.filename,
-                    content=content_text[:8000],
-                ),
-            )
-        ).strip()
-        parsed = parse_json_response(raw_analysis, silent=True)
-        if not isinstance(parsed, dict):
-            logger.warning("Invalid material analysis JSON, fallback validators: %s", raw_analysis[:200])
-            parsed = {}
-
-        title = validate_title(str(parsed.get("title", "")), fallback=fallback_title)
-        doc_type = validate_classify(str(parsed.get("doc_type", "")))
-
-        keyword_source = parsed.get("keywords", "")
-        if isinstance(keyword_source, (list, dict)):
-            raw_keywords = json.dumps(keyword_source, ensure_ascii=False)
-        else:
-            raw_keywords = str(keyword_source or "")
-        keywords = validate_keywords(raw_keywords)
-        if not keywords:
-            logger.warning("LLM keywords empty, fallback to jieba for file: %s", file.filename)
-            keywords = await asyncio.to_thread(svc.extract_keywords, content_text)
-        update_progress(64, "AI 信息识别完成")
-
-        summary = str(parsed.get("summary", "")).strip()
-        if not summary:
-            summary = (content_text or "").replace("\n", " ").strip()[:200]
-
-        try:
-            from app.services.style_analyzer import StyleAnalyzer
-
-            await asyncio.to_thread(
-                StyleAnalyzer(db, account_id=current_user.account_id).analyze_and_store,
-                content_text,
-                doc_type,
-            )
-        except Exception as e:
-            logger.warning("Style analyze skipped: %s", e)
-        update_progress(76, "风格特征分析完成")
-
-        material = await asyncio.to_thread(
-            svc.create_material,
-            current_user.id,
-            title,
-            file.filename,
-            file_path,
-            content_text,
-            doc_type,
-            summary,
-            keywords,
-            current_user.account_id,
+        result = await MaterialIngestionService(
+            db,
+            account_id=current_user.account_id,
+            user_id=current_user.id,
+        ).ingest_upload(
+            file_bytes=file_bytes,
+            filename=file.filename,
+            context_bridge=ctx_bridge,
+            progress_callback=update_progress,
         )
-        update_progress(88, "素材已入库")
-
-        try:
-            await ctx_bridge.add_material(
-                file_path,
-                doc_type,
-                title,
-                content_text=content_text,
-                account_id=current_user.account_id,
-            )
-        except Exception:
-            pass
-        update_progress(100, "解析完成", status="completed", message="ok")
-    except HTTPException as e:
+    except AppError as e:
+        db.rollback()
         if task_id:
-            msg = e.detail if isinstance(e.detail, str) else "upload_failed"
-            upload_progress_tracker.fail(task_id, message=msg)
+            upload_progress_tracker.fail(task_id, message=e.message)
         raise
     except Exception as e:
-        error_id = _new_error_id()
+        db.rollback()
+        error_id = new_error_id()
         logger.exception("upload material failed. error_id=%s user_id=%s err=%s", error_id, current_user.id, e)
         if task_id:
             upload_progress_tracker.fail(task_id, message=f"处理失败，请重试（错误ID: {error_id}）")
-        raise HTTPException(500, f"上传处理失败，请稍后重试（错误ID: {error_id}）")
+        raise AppError(
+            "上传处理失败，请稍后重试",
+            detail=str(e),
+            error_id=error_id,
+        ) from e
 
-    return serialize_material_upload_result(material)
+    return serialize_material_upload_result(result.material, warnings=result.warnings)
 
 
-@router.get("/upload-tasks/{task_id}")
+@router.get("/upload-tasks/{task_id}", response_model=UploadTaskResponse)
 def get_upload_task(
     task_id: str,
     current_user: User = Depends(require_permission("materials:read")),
@@ -201,7 +135,7 @@ def get_upload_task(
     return serialize_upload_task(task)
 
 
-@router.get("")
+@router.get("", response_model=MaterialListResponse)
 def list_materials(
     doc_type: str = Query(None),
     keyword: str = Query(None),
@@ -231,7 +165,9 @@ def list_materials(
         skip=skip,
         limit=limit,
     )
-    svc.normalize_materials_char_count(materials)
+    changed = svc.normalize_materials_char_count(materials)
+    if changed:
+        db.commit()
     items = [
         serialize_material_list_item(material, char_count=svc.calculate_char_count(material.content_text or ""))
         for material in materials
@@ -239,7 +175,7 @@ def list_materials(
     return serialize_collection_response(items, total=total)
 
 
-@router.get("/search")
+@router.get("/search", response_model=MaterialSearchResponse)
 async def search_materials(
     query: str = Query(..., min_length=1),
     doc_type: str = Query(None),
@@ -258,10 +194,11 @@ async def search_materials(
         top_k=top_k,
         account_id=current_user.account_id,
     )
-    return results
+    items = [serialize_material_search_hit(item) for item in results]
+    return serialize_collection_response(items, total=len(items))
 
 
-@router.get("/{material_id}")
+@router.get("/{material_id}", response_model=MaterialResponse)
 def get_material(
     material_id: int,
     db: Session = Depends(get_db),
@@ -282,7 +219,7 @@ def get_material(
     return serialize_material_detail(material, char_count=char_count)
 
 
-@router.delete("/{material_id}")
+@router.delete("/{material_id}", response_model=MessageResponse)
 async def delete_material(
     material_id: int,
     db: Session = Depends(get_db),
@@ -294,7 +231,13 @@ async def delete_material(
         raise HTTPException(404, "素材不存在")
     if material.user_id != current_user.id:
         raise HTTPException(403, "无权删除该素材")
-    svc.delete_material(material_id, account_id=current_user.account_id)
+    try:
+        file_path = svc.delete_material(material_id, account_id=current_user.account_id, commit=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    svc.cleanup_material_file(file_path)
     return serialize_message_response("删除成功")
 
 
@@ -312,7 +255,53 @@ class BookImportRequest(BaseModel):
     selected_files: list[str] = Field(default_factory=list)
 
 
-@router.get("/books/scan")
+@router.post("/books/upload", response_model=BookUploadResponse)
+async def upload_books(
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("books:write")),
+):
+    if not files:
+        raise HTTPException(400, "请选择要导入的书籍文件")
+
+    svc = BookImportService(db, account_id=current_user.account_id)
+    uploaded_items: list[dict] = []
+    errors: list[dict[str, str]] = []
+
+    for file in files:
+        source_name = Path(file.filename or '').name or '未命名文件'
+        try:
+            file_bytes = await file.read()
+            item = await asyncio.to_thread(svc.save_book_upload, file_bytes, source_name)
+            uploaded_items.append(item)
+        except FileValidationError as exc:
+            errors.append({
+                "source_name": source_name,
+                "error_message": str(exc),
+            })
+        except Exception as exc:
+            error_id = new_error_id()
+            logger.exception(
+                "upload books failed. error_id=%s user_id=%s filename=%s err=%s",
+                error_id,
+                current_user.id,
+                source_name,
+                exc,
+            )
+            errors.append({
+                "source_name": source_name,
+                "error_message": f"上传失败，请稍后重试（错误ID: {error_id}）",
+            })
+
+    return serialize_book_upload_response(
+        uploaded_items,
+        uploaded_count=len(uploaded_items),
+        failed_count=len(errors),
+        errors=errors,
+    )
+
+
+@router.get("/books/scan", response_model=BookScanResponse)
 def scan_books(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("books:read")),
@@ -323,7 +312,7 @@ def scan_books(
     return serialize_collection_response(public_items, total=len(public_items), books_dir=_safe_books_dir())
 
 
-@router.post("/books/import")
+@router.post("/books/import", response_model=BookImportStartResponse)
 def import_books(
     req: BookImportRequest,
     db: Session = Depends(get_db),
@@ -344,7 +333,7 @@ def import_books(
     return serialize_book_import_start_response(task_id, total_files=total_files)
 
 
-@router.get("/books/tasks/{task_id}")
+@router.get("/books/tasks/{task_id}", response_model=BookImportTaskResponse)
 def get_book_import_task(
     task_id: str,
     current_user: User = Depends(require_permission("books:read")),
@@ -357,7 +346,7 @@ def get_book_import_task(
     return serialize_book_import_task(task)
 
 
-@router.get("/books/sources")
+@router.get("/books/sources", response_model=BookSourceListResponse)
 def list_book_sources(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
@@ -377,7 +366,7 @@ def list_book_sources(
     return serialize_collection_response(items, total=total)
 
 
-@router.post("/batch-delete")
+@router.post("/batch-delete", response_model=MessageResponse)
 def batch_delete_materials(
     req: BatchDeleteRequest,
     db: Session = Depends(get_db),
@@ -387,13 +376,24 @@ def batch_delete_materials(
         raise HTTPException(400, "请选择要删除的素材")
     svc = MaterialService(db)
     deleted = 0
-    for mid in req.ids:
-        if svc.delete_material(mid, account_id=current_user.account_id):
+    file_paths: list[str | None] = []
+    try:
+        for mid in req.ids:
+            material = svc.get_material(mid, account_id=current_user.account_id)
+            if not material or material.user_id != current_user.id:
+                continue
+            file_paths.append(svc.delete_material(mid, account_id=current_user.account_id, commit=False))
             deleted += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    for file_path in file_paths:
+        svc.cleanup_material_file(file_path)
     return serialize_message_response(f"已删除 {deleted} 条素材")
 
 
-@router.post("/batch-classify")
+@router.post("/batch-classify", response_model=MessageResponse)
 def batch_classify_materials(
     req: BatchClassifyRequest,
     db: Session = Depends(get_db),

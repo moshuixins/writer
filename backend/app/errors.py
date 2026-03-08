@@ -23,10 +23,17 @@ logger = logging.getLogger("writer")
 
 class AppError(Exception):
     """应用基础异常"""
-    def __init__(self, message: str, status_code: int = 500, detail: str = ""):
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 500,
+        detail: str = "",
+        error_id: str | None = None,
+    ):
         self.message = message
         self.status_code = status_code
         self.detail = detail
+        self.error_id = error_id
         super().__init__(message)
 
 

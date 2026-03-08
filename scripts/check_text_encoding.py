@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -42,13 +43,13 @@ def should_check(path: Path, root: Path) -> bool:
 
 
 def iter_repo_files(root: Path):
-    for path in root.rglob('*'):
-        if not path.is_file():
-            continue
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        if should_check(path, root):
-            yield path
+    for current_root, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        dirnames[:] = [dirname for dirname in dirnames if dirname not in SKIP_DIRS]
+        current_path = Path(current_root)
+        for filename in filenames:
+            path = current_path / filename
+            if should_check(path, root):
+                yield path
 
 
 def iter_changed_files(root: Path):

@@ -11,22 +11,37 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_permission
 from app.database import get_db
 from app.models.account import Account
-from app.models.chat import ChatMessage, ChatSession, SessionDraft
-from app.models.document import GeneratedDocument
 from app.models.invite_code import InviteCode
-from app.models.material import Material
-from app.models.preference import UserPreference
 from app.models.role import Role
-from app.models.style import WritingHabit
 from app.models.user import User
-from app.rbac import ROLE_ADMIN, ROLE_WRITER
+from app.rbac import ROLE_ADMIN
+from app.schemas.accounts import (
+    AccountInviteListResponse,
+    AccountInviteResponse,
+    AccountListResponse,
+    AccountResponse,
+    AccountUsersResponse,
+    InviteStatusResponse,
+    PermissionListResponse,
+    RebindUserResponse,
+    RoleDeleteResponse,
+    RoleInfoResponse,
+    RoleListResponse,
+    UserRoleUpdateResponse,
+)
 from app.serializers import (
     serialize_account,
-    serialize_account_users,
+    serialize_account_users_response,
+    serialize_collection_response,
     serialize_invite,
+    serialize_invite_status_response,
     serialize_permission,
+    serialize_rebind_user_response,
+    serialize_role_delete_response,
     serialize_role_list,
+    serialize_user_role_update_response,
 )
+from app.services.account_membership_service import AccountMembershipService
 from app.services.rbac_service import RBACError, RBACService, user_has_role
 
 router = APIRouter()
@@ -155,7 +170,7 @@ class UpdateRoleRequest(BaseModel):
     permission_codes: list[str] = Field(default_factory=list)
 
 
-@router.get("/me")
+@router.get("/me", response_model=AccountResponse)
 def get_my_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -166,7 +181,7 @@ def get_my_account(
     return serialize_account(account)
 
 
-@router.get("")
+@router.get("", response_model=AccountListResponse)
 def list_accounts(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("accounts:read")),
@@ -181,19 +196,19 @@ def list_accounts(
         count_map[int(account_id or 0)] = count_map.get(int(account_id or 0), 0) + 1
 
     items = [serialize_account(row, user_count=count_map.get(int(row.id), 0)) for row in rows]
-    return {"items": items, "total": len(items)}
+    return serialize_collection_response(items, total=len(items))
 
 
-@router.get("/permissions")
+@router.get("/permissions", response_model=PermissionListResponse)
 def list_permissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("accounts:read")),
 ):
     items = [serialize_permission(row) for row in RBACService(db).list_permissions()]
-    return {"items": items, "total": len(items)}
+    return serialize_collection_response(items, total=len(items))
 
 
-@router.get("/roles")
+@router.get("/roles", response_model=RoleListResponse)
 def list_roles(
     account_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
@@ -202,10 +217,10 @@ def list_roles(
     target_account_id = int(account_id or current_user.account_id or 1)
     _ensure_account_scope(current_user, target_account_id)
     items = serialize_role_list(db, target_account_id)
-    return {"items": items, "total": len(items)}
+    return serialize_collection_response(items, total=len(items))
 
 
-@router.post("")
+@router.post("", response_model=AccountResponse)
 def create_account(
     req: CreateAccountRequest,
     db: Session = Depends(get_db),
@@ -225,7 +240,7 @@ def create_account(
     return serialize_account(row)
 
 
-@router.put("/{account_id}/status")
+@router.put("/{account_id}/status", response_model=AccountResponse)
 def update_account_status(
     account_id: int,
     req: UpdateAccountStatusRequest,
@@ -243,7 +258,7 @@ def update_account_status(
     return serialize_account(row)
 
 
-@router.get("/{account_id}/users")
+@router.get("/{account_id}/users", response_model=AccountUsersResponse)
 def list_account_users(
     account_id: int,
     db: Session = Depends(get_db),
@@ -255,15 +270,10 @@ def list_account_users(
         raise HTTPException(404, "账户不存在")
 
     users = db.query(User).filter(User.account_id == account_id).order_by(User.id.asc()).all()
-    items = serialize_account_users(db, users)
-    return {
-        "account": serialize_account(account),
-        "items": items,
-        "total": len(items),
-    }
+    return serialize_account_users_response(db, account, users)
 
 
-@router.post("/{account_id}/roles")
+@router.post("/{account_id}/roles", response_model=RoleInfoResponse)
 def create_role(
     account_id: int,
     req: CreateRoleRequest,
@@ -293,7 +303,7 @@ def create_role(
     return service.serialize_role(role, service.role_permission_codes([role]).get(int(role.id), []))
 
 
-@router.put("/{account_id}/roles/{role_id}")
+@router.put("/{account_id}/roles/{role_id}", response_model=RoleInfoResponse)
 def update_role(
     account_id: int,
     role_id: int,
@@ -317,7 +327,7 @@ def update_role(
     return service.serialize_role(role, service.role_permission_codes([role]).get(int(role.id), []))
 
 
-@router.delete("/{account_id}/roles/{role_id}")
+@router.delete("/{account_id}/roles/{role_id}", response_model=RoleDeleteResponse)
 def delete_role(
     account_id: int,
     role_id: int,
@@ -334,10 +344,10 @@ def delete_role(
     except RBACError as e:
         db.rollback()
         raise HTTPException(400, str(e))
-    return {"id": role_id, "deleted": True}
+    return serialize_role_delete_response(role_id)
 
 
-@router.post("/{account_id}/invites")
+@router.post("/{account_id}/invites", response_model=AccountInviteResponse)
 def create_invite(
     account_id: int,
     req: CreateInviteRequest,
@@ -363,7 +373,7 @@ def create_invite(
     return serialize_invite(row, invite_code=invite_code)
 
 
-@router.get("/{account_id}/invites")
+@router.get("/{account_id}/invites", response_model=AccountInviteListResponse)
 def list_invites(
     account_id: int,
     db: Session = Depends(get_db),
@@ -374,10 +384,10 @@ def list_invites(
         InviteCode.account_id == account_id,
     ).order_by(InviteCode.id.desc()).all()
     items = [serialize_invite(row) for row in rows]
-    return {"items": items, "total": len(items)}
+    return serialize_collection_response(items, total=len(items))
 
 
-@router.put("/invites/{invite_id}/revoke")
+@router.put("/invites/{invite_id}/revoke", response_model=InviteStatusResponse)
 def revoke_invite(
     invite_id: int,
     req: RevokeInviteRequest,
@@ -389,13 +399,13 @@ def revoke_invite(
         raise HTTPException(404, "邀请码不存在")
     _ensure_account_scope(current_user, int(invite.account_id or 0))
     if invite.status != "active":
-        return {"id": invite.id, "status": invite.status}
+        return serialize_invite_status_response(invite)
     invite.status = "revoked"
     db.commit()
-    return {"id": invite.id, "status": invite.status}
+    return serialize_invite_status_response(invite)
 
 
-@router.put("/{account_id}/users/{user_id}")
+@router.put("/{account_id}/users/{user_id}", response_model=RebindUserResponse)
 def rebind_user(
     account_id: int,
     user_id: int,
@@ -415,85 +425,15 @@ def rebind_user(
     if not user:
         raise HTTPException(404, "用户不存在")
 
-    old_account_id = int(user.account_id or 0)
-    if old_account_id == account_id:
-        return {
-            "user_id": user.id,
-            "old_account_id": old_account_id,
-            "new_account_id": account_id,
-            "migrated": False,
-            "migrate_data": bool(req.migrate_data),
-            "counts": {},
-        }
-
-    counts: dict[str, int] = {}
-    rbac = RBACService(db)
-    existing_role_codes = rbac.get_user_role_codes(user)
-
-    try:
-        user.account_id = account_id
-
-        if req.migrate_data:
-            counts["materials"] = db.query(Material).filter(
-                Material.user_id == user.id,
-            ).update({"account_id": account_id}, synchronize_session=False)
-
-            session_ids = [
-                sid
-                for (sid,) in db.query(ChatSession.id).filter(ChatSession.user_id == user.id).all()
-            ]
-            counts["chat_sessions"] = db.query(ChatSession).filter(
-                ChatSession.user_id == user.id,
-            ).update({"account_id": account_id}, synchronize_session=False)
-
-            if session_ids:
-                counts["chat_messages"] = db.query(ChatMessage).filter(
-                    ChatMessage.session_id.in_(session_ids),
-                ).update({"account_id": account_id}, synchronize_session=False)
-            else:
-                counts["chat_messages"] = 0
-
-            counts["session_drafts"] = db.query(SessionDraft).filter(
-                SessionDraft.user_id == user.id,
-            ).update({"account_id": account_id}, synchronize_session=False)
-
-            counts["generated_documents"] = db.query(GeneratedDocument).filter(
-                GeneratedDocument.user_id == user.id,
-            ).update({"account_id": account_id}, synchronize_session=False)
-
-            counts["user_preferences"] = db.query(UserPreference).filter(
-                UserPreference.user_id == user.id,
-            ).update({"account_id": account_id}, synchronize_session=False)
-
-            counts["writing_habits"] = db.query(WritingHabit).filter(
-                WritingHabit.user_id == user.id,
-            ).update({"account_id": account_id}, synchronize_session=False)
-
-        rbac.ensure_account_system_roles(account_id)
-        mapped_codes = []
-        for code in existing_role_codes:
-            role = rbac.get_role_by_code(account_id, code)
-            if role is not None and role.status == "active":
-                mapped_codes.append(code)
-        if not mapped_codes:
-            mapped_codes = [ROLE_WRITER]
-        rbac.set_user_roles(user, mapped_codes)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise HTTPException(500, "迁移账户失败")
-
-    return {
-        "user_id": user.id,
-        "old_account_id": old_account_id,
-        "new_account_id": account_id,
-        "migrated": True,
-        "migrate_data": bool(req.migrate_data),
-        "counts": counts,
-    }
+    result = AccountMembershipService(db).rebind_user(
+        user,
+        target_account_id=account_id,
+        migrate_data=bool(req.migrate_data),
+    )
+    return serialize_rebind_user_response(**result)
 
 
-@router.put("/{account_id}/users/{user_id}/roles")
+@router.put("/{account_id}/users/{user_id}/roles", response_model=UserRoleUpdateResponse)
 def update_user_roles(
     account_id: int,
     user_id: int,
@@ -511,17 +451,13 @@ def update_user_roles(
     try:
         roles = RBACService(db).set_user_roles(user, req.role_codes)
         db.commit()
-        return {
-            "id": user.id,
-            "role": user.role,
-            "role_codes": [role.code for role in roles],
-        }
+        return serialize_user_role_update_response(user, [role.code for role in roles])
     except RBACError as e:
         db.rollback()
         raise HTTPException(400, str(e))
 
 
-@router.put("/{account_id}/users/{user_id}/role")
+@router.put("/{account_id}/users/{user_id}/role", response_model=UserRoleUpdateResponse)
 def update_user_role(
     account_id: int,
     user_id: int,

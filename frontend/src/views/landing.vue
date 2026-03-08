@@ -177,7 +177,7 @@ async function loadEntrySessions() {
   loadingEntry.value = true
   try {
     const { data } = await apiChat.getSessions()
-    sessions.value = [...data].sort((left, right) => {
+    sessions.value = [...data.items].sort((left, right) => {
       const rightTime = Date.parse(right.created_at || '')
       const leftTime = Date.parse(left.created_at || '')
       return rightTime - leftTime

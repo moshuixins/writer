@@ -1,13 +1,29 @@
+import type {
+  AccountInviteResponse as ApiAccountInviteResponse,
+  AccountResponse as ApiAccountResponse,
+  AccountUserResponse as ApiAccountUserResponse,
+  AuthUserResponse as ApiAuthUserResponse,
+  BookImportFileResultResponse as ApiBookImportFileResultResponse,
+  BookImportTaskResponse as ApiBookImportTaskResponse,
+  BookScanItemResponse as ApiBookScanItemResponse,
+  BookSourceResponse as ApiBookSourceResponse,
+  BookUploadResponse as ApiBookUploadResponse,
+  ChatMessageResponse as ApiChatMessageResponse,
+  ChatSessionResponse as ApiChatSessionResponse,
+  ChatWorkflowSseEventResponse as ApiChatWorkflowSseEventResponse,
+  GeneratedDocumentHistoryItemResponse as ApiGeneratedDocumentHistoryItemResponse,
+  MaterialResponse as ApiMaterialResponse,
+  PermissionInfoResponse as ApiPermissionInfoResponse,
+  PreferencesResponse as ApiPreferencesResponse,
+  RoleInfoResponse as ApiRoleInfoResponse,
+  SessionDraftResponse as ApiSessionDraftResponse,
+  UserRoleSummaryResponse as ApiUserRoleSummaryResponse,
+} from '@/api/generated'
+
 // Canonical doc_type follows the 79 subtype catalog + "其他" fallback.
 export type DocType = string
 
-export interface ChatSession {
-  id: number
-  title: string
-  doc_type: DocType
-  status: string
-  created_at: string
-}
+export interface ChatSession extends ApiChatSessionResponse {}
 
 export interface PagedResult<T> {
   items: T[]
@@ -21,179 +37,50 @@ export interface MaterialListParams {
   keyword?: string
 }
 
-export interface ChatMessage {
-  id: number | string
-  role: string
-  content: string
-  created_at?: string
+export interface ChatMessage extends ApiChatMessageResponse {
+  warnings?: string[]
   workflow_steps?: ChatWorkflowStep[]
 }
 
 export interface ChatWorkflowStep {
   id: string
   step: string
-  status: 'running' | 'done' | 'error'
+  status: ApiChatWorkflowSseEventResponse['status']
   detail?: string
 }
 
-export interface Material {
-  id: number
-  title: string
-  doc_type: DocType
-  summary: string
-  keywords: string[]
-  content_text?: string
-  char_count: number
-  original_filename?: string
-  created_at: string
-}
+export interface Material extends ApiMaterialResponse {}
 
-export interface BookScanItem {
-  source_name: string
-  relative_path: string
-  source_hash: string
-  file_ext: '.epub' | '.pdf' | string
-  file_size: number
-  imported: boolean
-  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed' | string
-  doc_type?: string
-  updated_at?: string | null
-  source_id?: number | null
-}
+export interface BookScanItem extends ApiBookScanItemResponse {}
 
-export interface BookImportFileResult {
-  source_name: string
-  status: 'skipped' | 'completed' | 'partial' | 'failed' | string
-  chunk_count: number
-  ocr_used: boolean
-  ocr_pages: number
-  error_message?: string
-}
+export interface BookImportFileResult extends ApiBookImportFileResultResponse {}
 
-export interface BookImportTask {
-  task_id: string
-  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'interrupted' | string
-  stage: string
-  message: string
-  rebuild: boolean
-  started_at: number
-  updated_at: number
-  finished_at: number | null
-  total_files: number
-  completed_files: number
-  failed_files: number
-  partial_files: number
-  skipped_files: number
-  running_file: string
-  file_progress: number
-  total_chunks: number
-  completed_chunks: number
-  chunk_progress: number
-  overall_progress: number
-  ocr_used_files: number
-  ocr_pages: number
-  file_results: BookImportFileResult[]
-}
+export type BookUploadError = ApiBookUploadResponse['errors'][number]
 
-export interface BookSourceRecord {
-  id: number
-  source_name: string
-  source_hash: string
-  file_ext: string
-  file_size: number
-  status: string
-  doc_type: string
-  summary: string
-  keywords: string[]
-  chunk_count: number
-  ocr_used: boolean
-  error_message: string
-  metadata: Record<string, unknown>
-  created_at: string
-  updated_at: string
-}
+export interface BookUploadResult extends ApiBookUploadResponse {}
 
-export interface ExportDoc {
-  id: number
-  title: string
-  doc_type: DocType
-  version: number
-  created_at: string
-}
+export interface BookImportTask extends ApiBookImportTaskResponse {}
 
-export interface UserInfo {
-  id: number
-  username: string
-  display_name: string
-  department: string
-  role?: string
-  roles?: string[]
-  account_id?: number
-}
+export interface BookSourceRecord extends ApiBookSourceResponse {}
 
-export interface Account {
-  id: number
-  code: string
-  name: string
-  status: string
-  user_count?: number
-  created_at: string
-  updated_at: string
-}
+export interface ExportDoc extends ApiGeneratedDocumentHistoryItemResponse {}
 
-export interface UserRoleSummary {
-  id: number
-  code: string
-  name: string
-  is_system: boolean
-}
+export interface UserInfo extends ApiAuthUserResponse {}
 
-export interface AccountUser {
-  id: number
-  username: string
-  display_name: string
-  department: string
-  role: string
-  role_codes: string[]
-  roles: UserRoleSummary[]
-  created_at: string
-}
+export interface Account extends ApiAccountResponse {}
 
-export interface AccountInvite {
-  id: number
-  status: string
-  created_by?: number | null
-  used_by?: number | null
-  created_at: string
-  used_at?: string | null
-  expires_at?: string | null
-}
+export interface UserRoleSummary extends ApiUserRoleSummaryResponse {}
 
-export interface PermissionInfo {
-  id: number
-  code: string
-  name: string
-  description: string
-  is_system: boolean
-}
+export interface AccountUser extends ApiAccountUserResponse {}
 
-export interface RoleInfo {
-  id: number
-  account_id: number
-  code: string
-  role: string
-  name: string
-  description: string
-  status: string
-  is_system: boolean
-  permissions: string[]
-}
+export interface AccountInvite extends ApiAccountInviteResponse {}
 
-export interface Preferences {
-  signature_org: string
+export interface PermissionInfo extends ApiPermissionInfoResponse {}
+
+export interface RoleInfo extends ApiRoleInfoResponse {}
+
+export interface Preferences extends ApiPreferencesResponse {
   default_tone: 'formal' | 'semi-formal'
-  default_recipients: string
-  avoid_phrases: string
 }
 
 export interface ExportDocPayload {
@@ -211,10 +98,7 @@ export interface WriterDraft {
   date: string
 }
 
-export interface SessionDraftResponse {
-  exists: boolean
-  session_id: number
-  updated_at: string | null
+export interface SessionDraftResponse extends Omit<ApiSessionDraftResponse, 'draft'> {
   draft: WriterDraft
 }
 

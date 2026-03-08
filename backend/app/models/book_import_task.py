@@ -35,6 +35,7 @@ class BookImportTask(Base):
     ocr_used_files = Column(Integer, default=0)
     ocr_pages = Column(Integer, default=0)
     file_results = Column(JSON, default=list)
+    selected_files = Column(JSON, default=list)
     started_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     finished_at = Column(DateTime, nullable=True)

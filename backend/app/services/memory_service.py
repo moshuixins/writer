@@ -12,7 +12,15 @@ class MemoryService:
         self.db = db
         self.account_id = int(account_id or 1)
 
-    def set_preference(self, user_id: int, key: str, value: str, source: str = "explicit"):
+    def set_preference(
+        self,
+        user_id: int,
+        key: str,
+        value: str,
+        source: str = "explicit",
+        *,
+        commit: bool = True,
+    ):
         existing = self.db.query(UserPreference).filter(
             UserPreference.account_id == self.account_id,
             UserPreference.user_id == user_id,
@@ -32,7 +40,10 @@ class MemoryService:
                 confidence=1.0,
             )
             self.db.add(pref)
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
 
     def get_preferences(self, user_id: int) -> dict:
         prefs = self.db.query(UserPreference).filter(
@@ -46,4 +57,4 @@ class MemoryService:
         if not prefs:
             return ""
         pref_lines = [f"- {k}: {v}" for k, v in prefs.items()]
-        return "用户偏好：\n" + "\n".join(pref_lines)
+        return "用户偏好：\n" + "\n".join(pref_lines)

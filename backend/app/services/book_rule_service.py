@@ -19,36 +19,40 @@ class BookRuleService:
         source_id: int,
         doc_type: str,
         rules: Iterable[dict[str, object]],
+        commit: bool = True,
     ) -> int:
         self.db.query(BookStyleRule).filter(
             BookStyleRule.account_id == self.account_id,
             BookStyleRule.source_id == source_id,
-        ).delete()
+        ).delete(synchronize_session=False)
 
         count = 0
         for rule in rules:
-            text = str(rule.get("rule_text", "")).strip()
+            text = str(rule.get('rule_text', '')).strip()
             if not text:
                 continue
             row = BookStyleRule(
                 account_id=self.account_id,
                 source_id=source_id,
                 doc_type=doc_type,
-                rule_type=str(rule.get("rule_type", "structure")).strip() or "structure",
+                rule_type=str(rule.get('rule_type', 'structure')).strip() or 'structure',
                 rule_text=text[:4000],
-                confidence=max(0.0, min(1.0, float(rule.get("confidence", 0.6) or 0.6))),
-                origin_ref=str(rule.get("origin_ref", "")).strip()[:300],
+                confidence=max(0.0, min(1.0, float(rule.get('confidence', 0.6) or 0.6))),
+                origin_ref=str(rule.get('origin_ref', '')).strip()[:300],
             )
             self.db.add(row)
             count += 1
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         return count
 
     @staticmethod
     def _tokenize(text: str) -> set[str]:
-        lowered = (text or "").lower()
-        tokens = [t for t in re.split(r"[^\w\u4e00-\u9fff]+", lowered) if len(t) >= 2]
+        lowered = (text or '').lower()
+        tokens = [t for t in re.split(r'[^\w一-鿿]+', lowered) if len(t) >= 2]
         return set(tokens)
 
     def get_rules_for_prompt(self, *, doc_type: str, query: str, top_k: int) -> list[str]:
@@ -69,7 +73,7 @@ class BookRuleService:
         else:
             scored_rows: list[tuple[float, BookStyleRule]] = []
             for row in base_rows:
-                haystack = f"{row.rule_text} {row.origin_ref}"
+                haystack = f'{row.rule_text} {row.origin_ref}'
                 tokens = self._tokenize(haystack)
                 overlap = len(tokens.intersection(query_tokens))
                 score = overlap + float(row.confidence or 0.0)
@@ -79,9 +83,9 @@ class BookRuleService:
 
         items: list[str] = []
         for row in sorted_rows[: max(0, top_k)]:
-            prefix = f"[{row.rule_type}]"
+            prefix = f'[{row.rule_type}]'
             if row.origin_ref:
-                items.append(f"{prefix} {row.rule_text}（来源：{row.origin_ref}）")
+                items.append(f'{prefix} {row.rule_text}（来源：{row.origin_ref}）')
             else:
-                items.append(f"{prefix} {row.rule_text}")
-        return items
+                items.append(f'{prefix} {row.rule_text}')
+        return items

@@ -15,7 +15,7 @@ class BookImportTaskTracker:
         self._ttl_seconds = ttl_seconds
         self._tasks: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
-        self._active_task_by_account: dict[int, str] = {}
+        self._active_task_id: str | None = None
 
     def _now(self) -> float:
         return time.time()
@@ -54,6 +54,7 @@ class BookImportTaskTracker:
             "ocr_used_files": int(row.ocr_used_files or 0),
             "ocr_pages": int(row.ocr_pages or 0),
             "file_results": list(row.file_results or []),
+            "selected_files": list(row.selected_files or []),
         }
 
     def _load_db_task(self, task_id: str) -> dict[str, Any] | None:
@@ -66,21 +67,31 @@ class BookImportTaskTracker:
         finally:
             db.close()
 
-    def _load_db_active_task(self, account_id: int) -> dict[str, Any] | None:
+    def _load_db_active_task(self) -> dict[str, Any] | None:
         db = SessionLocal()
         try:
             row = (
                 db.query(BookImportTask)
-                .filter(
-                    BookImportTask.account_id == int(account_id or 1),
-                    BookImportTask.status.in_(["pending", "running"]),
-                )
+                .filter(BookImportTask.status.in_(["pending", "running"]))
                 .order_by(BookImportTask.updated_at.desc(), BookImportTask.id.desc())
                 .first()
             )
             if row is None:
                 return None
             return self._task_from_row(row)
+        finally:
+            db.close()
+
+    def _load_db_recoverable_task_ids(self) -> list[str]:
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(BookImportTask.task_id)
+                .filter(BookImportTask.status.in_(["pending", "running", "interrupted"]))
+                .order_by(BookImportTask.started_at.asc(), BookImportTask.id.asc())
+                .all()
+            )
+            return [str(task_id) for (task_id,) in rows if str(task_id).strip()]
         finally:
             db.close()
 
@@ -107,6 +118,7 @@ class BookImportTaskTracker:
             row.ocr_used_files = int(task.get("ocr_used_files", 0) or 0)
             row.ocr_pages = int(task.get("ocr_pages", 0) or 0)
             row.file_results = list(task.get("file_results", []))
+            row.selected_files = list(task.get("selected_files", []))
             row.started_at = self._dt_from_ts(task.get("started_ts")) or datetime.now(timezone.utc)
             row.updated_at = self._dt_from_ts(task.get("updated_ts")) or datetime.now(timezone.utc)
             row.finished_at = self._dt_from_ts(task.get("finished_ts"))
@@ -124,12 +136,9 @@ class BookImportTaskTracker:
             if now - float(task.get("updated_ts", now)) > self._ttl_seconds
         ]
         for task_id in expired:
-            task = self._tasks.pop(task_id, None)
-            if not task:
-                continue
-            account_id = int(task.get("account_id", 1))
-            if self._active_task_by_account.get(account_id) == task_id:
-                self._active_task_by_account.pop(account_id, None)
+            self._tasks.pop(task_id, None)
+            if self._active_task_id == task_id:
+                self._active_task_id = None
 
     @staticmethod
     def _safe_percent(numerator: int, denominator: int) -> int:
@@ -168,28 +177,54 @@ class BookImportTaskTracker:
             "ocr_used_files": task["ocr_used_files"],
             "ocr_pages": task["ocr_pages"],
             "file_results": list(task.get("file_results", [])),
+            "selected_files": list(task.get("selected_files", [])),
         }
 
     def reserve_slot(self, task_id: str, *, account_id: int) -> tuple[bool, str | None]:
+        del account_id
         now = self._now()
         with self._lock:
             self._prune_locked(now)
-            acc = int(account_id or 1)
-            active_id = self._active_task_by_account.get(acc)
+            active_id = self._active_task_id
             if active_id:
                 active = self._tasks.get(active_id) or self._load_db_task(active_id)
                 if active and active.get("status") in {"pending", "running"}:
                     return False, active_id
-                self._active_task_by_account.pop(acc, None)
+                self._active_task_id = None
 
-            db_active = self._load_db_active_task(acc)
-            if db_active is not None:
-                self._active_task_by_account[acc] = db_active["task_id"]
+            db_active = self._load_db_active_task()
+            if db_active is not None and db_active["task_id"] != task_id:
+                self._active_task_id = db_active["task_id"]
                 self._tasks[db_active["task_id"]] = db_active
                 return False, db_active["task_id"]
 
-            self._active_task_by_account[acc] = task_id
+            self._active_task_id = task_id
             return True, None
+
+    def claim_task(self, task_id: str) -> dict[str, Any] | None:
+        now = self._now()
+        with self._lock:
+            self._prune_locked(now)
+            active_id = self._active_task_id
+            if active_id and active_id != task_id:
+                active = self._tasks.get(active_id) or self._load_db_task(active_id)
+                if active and active.get("status") in {"pending", "running"}:
+                    return None
+                self._active_task_id = None
+
+            task = self._tasks.get(task_id) or self._load_db_task(task_id)
+            if not task:
+                return None
+            if task.get("status") == "interrupted":
+                task["status"] = "pending"
+                task["stage"] = "等待恢复"
+                task["message"] = task.get("message") or "准备恢复执行"
+                task["finished_ts"] = None
+                task["updated_ts"] = now
+                self._persist_task(task)
+            self._active_task_id = task_id
+            self._tasks[task_id] = task
+            return self._format(task)
 
     def create_task(
         self,
@@ -198,6 +233,7 @@ class BookImportTaskTracker:
         total_files: int,
         rebuild: bool = False,
         account_id: int = 1,
+        selected_files: list[str] | None = None,
     ) -> dict[str, Any]:
         now = self._now()
         with self._lock:
@@ -223,7 +259,45 @@ class BookImportTaskTracker:
                 "ocr_used_files": 0,
                 "ocr_pages": 0,
                 "file_results": [],
+                "selected_files": list(selected_files or []),
             }
+            self._tasks[task_id] = task
+            self._persist_task(task)
+            return self._format(task)
+
+    def restart(
+        self,
+        task_id: str,
+        *,
+        total_files: int,
+        selected_files: list[str] | None = None,
+        stage: str = "准备导入",
+        message: str = "任务已启动",
+    ) -> dict[str, Any] | None:
+        now = self._now()
+        with self._lock:
+            task = self._tasks.get(task_id) or self._load_db_task(task_id)
+            if not task:
+                return None
+            task["status"] = "running"
+            task["stage"] = stage
+            task["message"] = message
+            task["updated_ts"] = now
+            task["finished_ts"] = None
+            task["total_files"] = int(total_files or 0)
+            task["completed_files"] = 0
+            task["failed_files"] = 0
+            task["partial_files"] = 0
+            task["skipped_files"] = 0
+            task["running_file"] = ""
+            task["total_chunks"] = 0
+            task["completed_chunks"] = 0
+            task["ocr_used_files"] = 0
+            task["ocr_pages"] = 0
+            task["file_results"] = []
+            if selected_files is not None:
+                task["selected_files"] = list(selected_files)
+            self._active_task_id = task_id
             self._tasks[task_id] = task
             self._persist_task(task)
             return self._format(task)
@@ -280,9 +354,8 @@ class BookImportTaskTracker:
             return self._format(task)
 
     def _release_slot_locked(self, task_id: str) -> None:
-        for acc, active_id in list(self._active_task_by_account.items()):
-            if active_id == task_id:
-                self._active_task_by_account.pop(acc, None)
+        if self._active_task_id == task_id:
+            self._active_task_id = None
 
     def finish(self, task_id: str, *, status: str = "completed", message: str = "") -> dict[str, Any] | None:
         now = self._now()
@@ -329,6 +402,26 @@ class BookImportTaskTracker:
                     return None
                 self._tasks[task_id] = task
             return self._format(task)
+
+    def get_state(self, task_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                task = self._load_db_task(task_id)
+                if task is None:
+                    return None
+                self._tasks[task_id] = task
+            return dict(task)
+
+    def list_recoverable_task_ids(self) -> list[str]:
+        task_ids = self._load_db_recoverable_task_ids()
+        with self._lock:
+            for task_id in task_ids:
+                if task_id not in self._tasks:
+                    task = self._load_db_task(task_id)
+                    if task is not None:
+                        self._tasks[task_id] = task
+            return task_ids
 
 
 book_import_task_tracker = BookImportTaskTracker()

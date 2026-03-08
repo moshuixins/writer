@@ -13,6 +13,7 @@ from app.models.document import GeneratedDocument
 from app.models.user import User
 from app.prompts.doc_types_catalog import OTHER_DOC_TYPE
 from app.prompts.validators import ensure_canonical_doc_type
+from app.schemas.documents import GeneratedDocumentHistoryListResponse
 from app.serializers import serialize_collection_response, serialize_generated_document_history_item
 from app.services.docx_generator import DocxGenerator
 from app.services.draft_service import DraftService
@@ -20,6 +21,20 @@ from app.services.editor_doc_parser import EditorDocParser
 
 router = APIRouter()
 
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+DOCX_FILE_RESPONSE = {
+    200: {
+        "description": "DOCX binary file.",
+        "content": {
+            DOCX_MEDIA_TYPE: {
+                "schema": {
+                    "type": "string",
+                    "format": "binary",
+                },
+            },
+        },
+    },
+}
 
 DEFAULT_BODY_JSON = {
     "type": "doc",
@@ -48,7 +63,13 @@ class ExportEditorRequest(BaseModel):
     draft: WriterDraftPayload
 
 
-@router.post("/export")
+def _cleanup_generated_file(file_path: str) -> None:
+    path_obj = Path(file_path)
+    if path_obj.exists():
+        path_obj.unlink()
+
+
+@router.post("/export", response_class=FileResponse, responses=DOCX_FILE_RESPONSE)
 def export_document(
     req: ExportRequest,
     db: Session = Depends(get_db),
@@ -72,17 +93,22 @@ def export_document(
         docx_file_path=filepath,
     )
     db.add(doc)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        _cleanup_generated_file(filepath)
+        raise
 
     filename = f"{req.title or '文稿'}.docx"
     return FileResponse(
         filepath,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=DOCX_MEDIA_TYPE,
         filename=filename,
     )
 
 
-@router.post("/export-editor")
+@router.post("/export-editor", response_class=FileResponse, responses=DOCX_FILE_RESPONSE)
 def export_editor_document(
     req: ExportEditorRequest,
     db: Session = Depends(get_db),
@@ -129,16 +155,21 @@ def export_editor_document(
         docx_file_path=filepath,
     )
     db.add(doc)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        _cleanup_generated_file(filepath)
+        raise
 
     return FileResponse(
         filepath,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=DOCX_MEDIA_TYPE,
         filename=f"{title}.docx",
     )
 
 
-@router.get("/history")
+@router.get("/history", response_model=GeneratedDocumentHistoryListResponse)
 def list_export_history(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
@@ -155,7 +186,7 @@ def list_export_history(
     return serialize_collection_response(items, total=total)
 
 
-@router.get("/history/{doc_id}/download")
+@router.get("/history/{doc_id}/download", response_class=FileResponse, responses=DOCX_FILE_RESPONSE)
 def download_document(
     doc_id: int,
     db: Session = Depends(get_db),
@@ -172,6 +203,6 @@ def download_document(
         raise HTTPException(404, "文件已被清理，请重新导出")
     return FileResponse(
         doc.docx_file_path,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=DOCX_MEDIA_TYPE,
         filename=f"{doc.title or '文稿'}.docx",
     )

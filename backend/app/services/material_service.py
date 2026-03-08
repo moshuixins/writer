@@ -147,6 +147,8 @@ class MaterialService:
         summary: str | None = None,
         keywords: list[str] | None = None,
         account_id: int = 1,
+        *,
+        commit: bool = True,
     ) -> Material:
         material = Material(
             account_id=account_id,
@@ -161,8 +163,10 @@ class MaterialService:
             char_count=self.calculate_char_count(content_text),
         )
         self.db.add(material)
-        self.db.commit()
-        self.db.refresh(material)
+        self.db.flush()
+        if commit:
+            self.db.commit()
+            self.db.refresh(material)
         return material
 
     def calculate_char_count(self, text: str) -> int:
@@ -178,15 +182,16 @@ class MaterialService:
             material.char_count = expected
         return expected
 
-    def normalize_materials_char_count(self, materials: list[Material]) -> None:
+    def normalize_materials_char_count(self, materials: list[Material], *, commit: bool = False) -> bool:
         changed = False
         for material in materials:
             expected = self.calculate_char_count(material.content_text or "")
             if material.char_count != expected:
                 material.char_count = expected
                 changed = True
-        if changed:
+        if changed and commit:
             self.db.commit()
+        return changed
 
     def get_materials(
         self,
@@ -219,15 +224,22 @@ class MaterialService:
             .first()
         )
 
-    def delete_material(self, material_id: int, *, account_id: int) -> bool:
+    @staticmethod
+    def cleanup_material_file(file_path: str | None) -> None:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+
+    def delete_material(self, material_id: int, *, account_id: int, commit: bool = True) -> str | None:
         material = self.get_material(material_id, account_id=account_id)
         if not material:
-            return False
-        if material.file_path and os.path.exists(material.file_path):
-            os.remove(material.file_path)
+            return None
+        file_path = material.file_path or None
         self.db.delete(material)
-        self.db.commit()
-        return True
+        self.db.flush()
+        if commit:
+            self.db.commit()
+            self.cleanup_material_file(file_path)
+        return file_path
 
     def _build_query(
         self,
@@ -244,4 +256,4 @@ class MaterialService:
             q = q.filter(Material.doc_type == doc_type)
         if keyword:
             q = q.filter(Material.content_text.contains(keyword))
-        return q
+        return q

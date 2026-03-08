@@ -14,6 +14,7 @@ import StatusBadge from '@/components/StatusBadge/index.vue'
 import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
 
 const scanning = ref(false)
+const uploadingBooks = ref(false)
 const startingImport = ref(false)
 const loadingSources = ref(false)
 
@@ -22,6 +23,7 @@ const booksDir = ref('')
 const scanItems = ref<BookScanItem[]>([])
 const selectedRows = ref<BookScanItem[]>([])
 const scanTableRef = ref<any>(null)
+const uploadInputRef = ref<HTMLInputElement | null>(null)
 
 const task = ref<BookImportTask | null>(null)
 const currentTaskId = ref('')
@@ -99,6 +101,49 @@ function toggleSelectAll(value: boolean | string | number) {
   scanItems.value.forEach((item) => {
     scanTableRef.value?.toggleRowSelection?.(item, true)
   })
+}
+
+function openUploadDialog() {
+  uploadInputRef.value?.click()
+}
+
+async function handleBookFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  input.value = ''
+  if (!files.length) {
+    return
+  }
+
+  const formData = new FormData()
+  files.forEach((file) => {
+    formData.append('files', file)
+  })
+
+  uploadingBooks.value = true
+  try {
+    const { data } = await apiBooks.uploadBooks(formData)
+    await scanBooks()
+
+    if (data.uploaded_count > 0 && data.failed_count === 0) {
+      ElMessage.success(`已导入 ${data.uploaded_count} 本书籍，可直接开始学习`)
+      return
+    }
+
+    if (data.uploaded_count > 0 && data.failed_count > 0) {
+      ElMessage.warning(`已导入 ${data.uploaded_count} 本，另有 ${data.failed_count} 本导入失败`)
+      return
+    }
+
+    const firstError = data.errors?.[0]?.error_message || '书籍导入失败'
+    ElMessage.error(firstError)
+  }
+  catch {
+    ElMessage.error('书籍导入失败，请稍后重试')
+  }
+  finally {
+    uploadingBooks.value = false
+  }
 }
 
 function stopPolling() {
@@ -193,6 +238,7 @@ async function startImport() {
       overall_progress: 0,
       ocr_used_files: 0,
       ocr_pages: 0,
+      selected_files: selected,
       file_results: [],
     }
     startPolling()
@@ -236,11 +282,22 @@ onBeforeUnmount(() => {
 
 <template>
   <PageShell>
+    <input
+      ref="uploadInputRef"
+      class="book-learning__file-input"
+      type="file"
+      accept=".epub,.pdf,application/epub+zip,application/pdf"
+      multiple
+      @change="handleBookFileChange"
+    >
     <PageHeader
       title="书籍学习"
-      subtitle="扫描并导入 data/book 目录中的 EPUB 与 PDF，提炼写作结构和风格规则进入知识库。"
+      subtitle="可直接导入 EPUB/PDF 到 data/book，并对目录中的书籍发起学习任务，提炼写作结构和风格规则进入知识库。"
     >
       <template #actions>
+        <el-button :loading="uploadingBooks" @click="openUploadDialog">
+          导入书籍
+        </el-button>
         <el-button :loading="scanning" @click="scanBooks">
           扫描目录
         </el-button>
@@ -485,6 +542,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.book-learning__file-input {
+  display: none;
+}
+
 .book-learning__meta {
   display: flex;
   gap: 8px;

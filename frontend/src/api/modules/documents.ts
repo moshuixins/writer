@@ -1,4 +1,5 @@
-import type { ExportDoc, ExportDocPayload, ExportEditorPayload, PagedResult } from '@/types/writer'
+import type { GeneratedDocumentHistoryListResponse } from '../generated'
+import type { ExportDocPayload, ExportEditorPayload } from '@/types/writer'
 import api from '../index'
 
 export default {
@@ -9,7 +10,7 @@ export default {
     api.post('/api/documents/export-editor', data, { responseType: 'blob' }),
 
   history: (params: { skip?: number, limit?: number }) =>
-    api.get<PagedResult<ExportDoc>>('/api/documents/history', { params }),
+    api.get<GeneratedDocumentHistoryListResponse>('/api/documents/history', { params }),
 
   download: (id: number) =>
     api.get(`/api/documents/history/${id}/download`, { responseType: 'blob' }),

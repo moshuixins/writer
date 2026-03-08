@@ -58,7 +58,14 @@ class WritingService:
         normalized = normalize_doc_type(cleaned)
         return normalized or OTHER_DOC_TYPE
 
-    def create_session(self, user_id: int, title: str, doc_type: str | None = None) -> ChatSession:
+    def create_session(
+        self,
+        user_id: int,
+        title: str,
+        doc_type: str | None = None,
+        *,
+        commit: bool = True,
+    ) -> ChatSession:
         session = ChatSession(
             account_id=self.account_id,
             user_id=user_id,
@@ -66,11 +73,20 @@ class WritingService:
             doc_type=doc_type,
         )
         self.db.add(session)
-        self.db.commit()
-        self.db.refresh(session)
+        self.db.flush()
+        if commit:
+            self.db.commit()
+            self.db.refresh(session)
         return session
 
-    def add_message(self, session_id: int, role: str, content: str) -> ChatMessage:
+    def add_message(
+        self,
+        session_id: int,
+        role: str,
+        content: str,
+        *,
+        commit: bool = True,
+    ) -> ChatMessage:
         msg = ChatMessage(
             account_id=self.account_id,
             session_id=session_id,
@@ -78,8 +94,10 @@ class WritingService:
             content=content,
         )
         self.db.add(msg)
-        self.db.commit()
-        self.db.refresh(msg)
+        self.db.flush()
+        if commit:
+            self.db.commit()
+            self.db.refresh(msg)
         return msg
 
     def get_guidance(self, request: str, doc_type: str) -> str:
@@ -307,4 +325,4 @@ class WritingService:
             )
             .order_by(ChatSession.created_at.desc())
             .all()
-        )
+        )

@@ -58,12 +58,64 @@ def serialize_auth_token_response(db: Session, user: User, token: str) -> dict[s
     }
 
 
+def serialize_permission_codes_response(permission_codes: list[str] | None) -> dict[str, Any]:
+    return {
+        "permissions": [str(code) for code in list(permission_codes or []) if str(code)],
+    }
+
+
+def serialize_profile_update_response(
+    db: Session,
+    user: User,
+    *,
+    message: str = "资料已更新",
+) -> dict[str, Any]:
+    return {
+        "message": message,
+        "user": serialize_auth_user(db, user),
+    }
+
+
 def serialize_message_response(message: str) -> dict[str, str]:
     return {"message": message}
 
 
-def serialize_chat_reply(reply: str) -> dict[str, str]:
-    return {"reply": reply}
+def _attach_warnings(payload: dict[str, Any], warnings: list[str] | None = None) -> dict[str, Any]:
+    normalized = [str(item).strip() for item in (warnings or []) if str(item).strip()]
+    if normalized:
+        payload["warnings"] = normalized
+    return payload
+
+
+def serialize_chat_reply(reply: str, warnings: list[str] | None = None) -> dict[str, Any]:
+    return _attach_warnings({"reply": reply}, warnings)
+
+
+def serialize_review_issue(issue: dict[str, Any]) -> dict[str, str]:
+    return {
+        "type": str(issue.get("type", "") or ""),
+        "severity": str(issue.get("severity", "") or ""),
+        "detail": str(issue.get("detail", "") or ""),
+        "suggestion": str(issue.get("suggestion", "") or ""),
+    }
+
+
+def serialize_review_response(result: dict[str, Any] | None) -> dict[str, Any]:
+    payload = result if isinstance(result, dict) else {}
+    try:
+        score = int(payload.get("score", 0) or 0)
+    except (TypeError, ValueError):
+        score = 0
+    issues = [
+        serialize_review_issue(item)
+        for item in list(payload.get("issues", []))
+        if isinstance(item, dict)
+    ]
+    return {
+        "score": max(0, min(100, score)),
+        "issues": issues,
+        "summary": str(payload.get("summary", "") or ""),
+    }
 
 
 def _serialize_sse_payload(payload: dict[str, Any]) -> str:
@@ -82,11 +134,19 @@ def serialize_chat_workflow_sse(step: str, status: str, detail: str | None = Non
 
 
 def serialize_chat_chunk_sse(chunk: str) -> str:
-    return _serialize_sse_payload({"chunk": chunk})
+    return _serialize_sse_payload({"event": "chunk", "chunk": chunk})
 
 
 def serialize_chat_error_sse(message: str) -> str:
-    return _serialize_sse_payload({"error": message})
+    return _serialize_sse_payload({"event": "error", "error": message})
+
+
+def serialize_chat_final_sse(message: ChatMessage, warnings: list[str] | None = None) -> str:
+    payload = {
+        "event": "final",
+        "message": serialize_chat_message(message),
+    }
+    return _serialize_sse_payload(_attach_warnings(payload, warnings))
 
 
 def serialize_chat_done_sse() -> str:
@@ -174,6 +234,15 @@ def serialize_account_users(db: Session, users: list[User]) -> list[dict[str, An
     return items
 
 
+def serialize_account_users_response(db: Session, account: Account, users: list[User]) -> dict[str, Any]:
+    items = serialize_account_users(db, users)
+    return {
+        "account": serialize_account(account),
+        "items": items,
+        "total": len(items),
+    }
+
+
 def serialize_invite(invite: InviteCode, *, invite_code: str | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": invite.id,
@@ -191,11 +260,58 @@ def serialize_invite(invite: InviteCode, *, invite_code: str | None = None) -> d
     return payload
 
 
+def serialize_invite_status_response(invite: InviteCode) -> dict[str, Any]:
+    return {
+        "id": int(invite.id),
+        "status": str(invite.status),
+    }
+
+
+def serialize_role_delete_response(role_id: int) -> dict[str, Any]:
+    return {
+        "id": int(role_id),
+        "deleted": True,
+    }
+
+
+def serialize_rebind_user_response(
+    *,
+    user_id: int,
+    old_account_id: int,
+    new_account_id: int,
+    migrated: bool,
+    migrate_data: bool,
+    counts: dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "user_id": int(user_id),
+        "old_account_id": int(old_account_id),
+        "new_account_id": int(new_account_id),
+        "migrated": bool(migrated),
+        "migrate_data": bool(migrate_data),
+        "counts": {
+            str(key): int(value or 0)
+            for key, value in dict(counts or {}).items()
+        },
+    }
+    return _attach_warnings(payload, warnings)
+
+
+def serialize_user_role_update_response(user: User, role_codes: list[str] | None) -> dict[str, Any]:
+    return {
+        "id": int(user.id),
+        "role": str(user.role or ""),
+        "role_codes": [str(code) for code in list(role_codes or []) if str(code)],
+    }
+
+
 def serialize_chat_session(
     session: ChatSession,
     *,
     include_status: bool = True,
     include_created_at: bool = True,
+    warnings: list[str] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": session.id,
@@ -206,7 +322,7 @@ def serialize_chat_session(
         payload["status"] = session.status
     if include_created_at:
         payload["created_at"] = to_shanghai_iso(session.created_at)
-    return payload
+    return _attach_warnings(payload, warnings)
 
 
 def serialize_chat_message(message: ChatMessage) -> dict[str, Any]:
@@ -248,8 +364,8 @@ def _material_base(material: Material, *, char_count: int | None = None) -> dict
     }
 
 
-def serialize_material_upload_result(material: Material) -> dict[str, Any]:
-    return _material_base(material)
+def serialize_material_upload_result(material: Material, warnings: list[str] | None = None) -> dict[str, Any]:
+    return _attach_warnings(_material_base(material), warnings)
 
 
 def serialize_material_list_item(material: Material, *, char_count: int | None = None) -> dict[str, Any]:
@@ -264,6 +380,24 @@ def serialize_material_detail(material: Material, *, char_count: int | None = No
     payload["original_filename"] = material.original_filename
     payload["created_at"] = to_shanghai_iso(material.created_at)
     return payload
+
+
+def serialize_material_search_hit(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("metadata") if isinstance(item, dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    try:
+        score = float(metadata.get("score", 0) or 0)
+    except (TypeError, ValueError):
+        score = 0.0
+    return {
+        "text": str(item.get("text", "") if isinstance(item, dict) else ""),
+        "metadata": {
+            "uri": str(metadata.get("uri", "") or ""),
+            "title": str(metadata.get("title", "") or ""),
+            "score": score,
+        },
+    }
 
 
 def _serialize_datetime_like(value: datetime | str | None) -> str | None:
@@ -335,6 +469,7 @@ def serialize_book_import_task(task: dict[str, Any]) -> dict[str, Any]:
         "ocr_used_files": int(task.get("ocr_used_files", 0) or 0),
         "ocr_pages": int(task.get("ocr_pages", 0) or 0),
         "file_results": [serialize_book_import_file_result(item) for item in list(task.get("file_results", []))],
+        "selected_files": [str(item) for item in list(task.get("selected_files", []))],
     }
 
 
@@ -344,6 +479,29 @@ def serialize_book_import_start_response(task_id: str, *, total_files: int, stat
         "status": status,
         "total_files": int(total_files),
     }
+
+
+def serialize_book_upload_error(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_name": str(item.get("source_name", "")),
+        "error_message": str(item.get("error_message", "")),
+    }
+
+
+def serialize_book_upload_response(
+    items: list[dict[str, Any]],
+    *,
+    uploaded_count: int,
+    failed_count: int,
+    errors: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return serialize_collection_response(
+        [serialize_book_scan_item(item) for item in items],
+        total=len(items),
+        uploaded_count=int(uploaded_count),
+        failed_count=int(failed_count),
+        errors=[serialize_book_upload_error(item) for item in errors],
+    )
 
 
 def serialize_book_source(source: BookSource) -> dict[str, Any]:

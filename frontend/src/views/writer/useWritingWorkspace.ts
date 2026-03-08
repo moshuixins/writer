@@ -1,23 +1,18 @@
+import type { ChatStreamFinalEvent, ChatStreamWorkflowEvent } from '@/api/streams/chatStream'
 import type { ChatMessage, ChatSession, WriterDraft } from '@/types/writer'
 import DOMPurify from 'dompurify'
 import { ElMessage } from 'element-plus'
 import MarkdownIt from 'markdown-it'
-import api from '@/api'
+import { extractApiErrorMessage } from '@/api'
 import apiChat from '@/api/modules/chat'
 import apiDocuments from '@/api/modules/documents'
+import { streamChatReply } from '@/api/streams/chatStream'
 import dayjs, { SHANGHAI_TZ } from '@/utils/dayjs'
 import { useWritingSessions } from './useWritingSessions'
 
 interface OfficialEditorExpose {
   insertTextAtCursor: (text: string) => void
   focusEditor: () => void
-}
-
-interface WorkflowEventPayload {
-  event?: string
-  step?: string
-  status?: 'running' | 'done' | 'error'
-  detail?: string
 }
 
 type SaveState = 'idle' | 'dirty' | 'saving-auto' | 'saving-manual' | 'saved' | 'error'
@@ -168,7 +163,7 @@ export function useWritingWorkspace() {
     return 'running'
   }
 
-  function upsertWorkflowStep(message: ChatMessage, payload: WorkflowEventPayload) {
+  function upsertWorkflowStep(message: ChatMessage, payload: ChatStreamWorkflowEvent) {
     if (!payload.step) {
       return
     }
@@ -201,12 +196,11 @@ export function useWritingWorkspace() {
     )
   }
 
-  function getStreamUrl() {
-    const baseURL = `${api.defaults.baseURL || ''}`.trim()
-    if (!baseURL) {
-      return '/api/chat/send-stream'
+  function syncStreamMessage(targetId: string, message: ChatMessage) {
+    const index = messages.value.findIndex(item => item.id === targetId)
+    if (index !== -1) {
+      messages.value[index] = { ...message }
     }
-    return `${baseURL.replace(/\/+$/, '')}/api/chat/send-stream`
   }
 
   function scrollToBottom() {
@@ -344,7 +338,7 @@ export function useWritingWorkspace() {
         apiChat.getDraft(session.id),
       ])
 
-      messages.value = messageResp.data
+      messages.value = messageResp.data.items
       scrollToBottom()
 
       hydratingDraft.value = true
@@ -403,86 +397,47 @@ export function useWritingWorkspace() {
     scrollToBottom()
 
     try {
-      const response = await fetch(getStreamUrl(), {
-        method: 'POST',
-        signal: abortController.value.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}),
-        },
-        body: JSON.stringify({
+      let finalReceived = false
+
+      await streamChatReply(
+        {
           session_id: currentSession.value.id,
           message: text,
-        }),
-      })
+        },
+        {
+          signal: abortController.value.signal,
+          token: userStore.token,
+          onWorkflow(event) {
+            upsertWorkflowStep(assistantMessage, event)
+            syncStreamMessage(assistantTempId, assistantMessage)
+            scrollToBottom()
+          },
+          onChunk(chunk) {
+            assistantMessage.content += chunk
+            syncStreamMessage(assistantTempId, assistantMessage)
+            scrollToBottom()
+          },
+          onFinal(event: ChatStreamFinalEvent) {
+            finalReceived = true
+            assistantMessage.id = event.message.id
+            assistantMessage.content = event.message.content
+            assistantMessage.created_at = event.message.created_at
+            assistantMessage.warnings = event.warnings
+            syncStreamMessage(assistantTempId, {
+              ...event.message,
+              workflow_steps: assistantMessage.workflow_steps,
+              warnings: event.warnings,
+            })
+            scrollToBottom()
+          },
+        },
+      )
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) {
-        throw new Error('读取响应流失败')
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      const processLine = (line: string) => {
-        if (!line.startsWith('data: ')) {
-          return
-        }
-        const payload = line.slice(6).trim()
-        if (!payload || payload === '[DONE]') {
-          return
-        }
-        const parsed = JSON.parse(payload)
-        if (parsed.error) {
-          throw new Error(parsed.error)
-        }
-        if (parsed.event === 'workflow') {
-          upsertWorkflowStep(assistantMessage, parsed as WorkflowEventPayload)
-          const index = messages.value.findIndex(message => message.id === assistantTempId)
-          if (index !== -1) {
-            messages.value[index] = { ...assistantMessage }
-          }
-          scrollToBottom()
-          return
-        }
-        if (parsed.chunk) {
-          assistantMessage.content += parsed.chunk
-          const index = messages.value.findIndex(message => message.id === assistantTempId)
-          if (index !== -1) {
-            messages.value[index] = { ...assistantMessage }
-          }
-          scrollToBottom()
-        }
-      }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) {
-          break
-        }
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          processLine(line)
-        }
-      }
-
-      if (buffer.trim()) {
-        processLine(buffer.trim())
-      }
-      if (assistantMessage.content.trim() || assistantMessage.workflow_steps?.length) {
-        const index = messages.value.findIndex(message => message.id === assistantTempId)
-        if (index !== -1) {
-          messages.value[index] = {
-            ...assistantMessage,
-            id: `assistant-${Date.now()}-${msgIdCounter++}`,
-          }
-        }
+      if (!finalReceived && (assistantMessage.content.trim() || assistantMessage.workflow_steps?.length)) {
+        syncStreamMessage(assistantTempId, {
+          ...assistantMessage,
+          id: `assistant-${Date.now()}-${msgIdCounter++}`,
+        })
       }
     }
     catch (error: any) {
@@ -496,7 +451,7 @@ export function useWritingWorkspace() {
       else {
         messages.value = messages.value.filter(message => message.id !== userTempId && message.id !== assistantTempId)
         inputText.value = text
-        ElMessage.error(error?.message || '发送失败，请稍后重试')
+        ElMessage.error(extractApiErrorMessage(error))
       }
     }
     finally {
@@ -573,8 +528,8 @@ ${payload}`
 
       ElMessage.success('导出成功')
     }
-    catch {
-      ElMessage.error('导出失败，请稍后重试')
+    catch (error) {
+      ElMessage.error(extractApiErrorMessage(error))
     }
   }
 

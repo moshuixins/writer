@@ -129,7 +129,7 @@ async function loadSessions(options: { force?: boolean } = {}) {
   loadingSessions.value = true
   try {
     const { data } = await apiChat.getSessions()
-    sessions.value = data
+    sessions.value = data.items
     sessionsLoaded.value = true
     syncLastSessionPointer()
     return sessions.value

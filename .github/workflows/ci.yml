@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pytest
+
+      - name: Compile backend
+        run: python -m compileall backend/app backend/tests scripts
+
+      - name: Run backend regression tests
+        run: python -m pytest backend/tests/test_regressions.py -q
+
+      - name: Check text encoding
+        run: python scripts/check_text_encoding.py --all
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies for OpenAPI export
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+
+      - name: Install frontend dependencies
+        run: pnpm -C frontend install --frozen-lockfile
+
+      - name: Verify OpenAPI generated artifacts
+        run: pnpm -C frontend run verify:openapi
+
+      - name: Type check
+        run: pnpm -C frontend exec vue-tsc --noEmit
+
+      - name: Lint ESLint
+        run: pnpm -C frontend run lint:eslint:check
+
+      - name: Lint Stylelint
+        run: pnpm -C frontend run lint:stylelint:check
+
+      - name: Permission regression
+        run: pnpm -C frontend run test:permissions
+
+      - name: Build frontend
+        run: pnpm -C frontend run --config.verify-deps-before-run=false build

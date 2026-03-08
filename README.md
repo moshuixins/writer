@@ -1,126 +1,151 @@
 # 公文写作系统
 
-一个面向公文写作场景的多账户智能写作系统，提供写作会话、写作工作台、素材管理、书籍学习、风格学习、权限管理和 DOCX 导出能力。
+公文写作系统是一个面向正式公文场景的全栈应用，提供写作会话、素材治理、书籍学习、风格增强、DOCX 导出以及基于账户的权限与资源隔离能力。
 
-## 项目概览
+## 项目定位
 
-本项目围绕“公文起草、素材沉淀、风格复用、知识增强、权限隔离”构建，当前架构由三部分组成：
+系统围绕“写作工作台 + 知识增强 + 账户治理”构建，目标不是做通用聊天，而是把正式公文写作流程收口为一套可管理、可追踪、可部署的业务系统。
 
-- 前端：Vue 3 + TypeScript + Vite + Element Plus
-- 后端：FastAPI + SQLAlchemy + LangChain
-- 检索与记忆：OpenViking
+当前仓库已经包含：
 
-系统默认使用 SQLite 落库，OpenViking 承担素材、书籍知识和账户级记忆检索。
+- 落地页、登录页、写作工作区和管理后台
+- FastAPI 后端、Vue 3 前端、OpenViking 知识库接入
+- Alembic 数据库迁移
+- 一次性邀请码注册与初始化管理员
+- 基于账户的 RBAC、资源隔离和权限回归
+- EPUB / PDF 书籍学习与扫描版 PDF OCR
+- OpenAPI 产物生成、前端权限回归、后端回归测试、GitHub Actions CI
 
-## 当前能力
+## 核心能力
 
-### 1. 写作会话与工作台
+### 1. 写作工作区
 
-- 支持多轮对话式公文写作
-- 支持 SSE 流式输出
-- 对话过程中展示工作流步骤，例如搜索素材、检索书籍知识、融合书籍风格规则
-- 会话上下文默认使用最近 20 条消息
-- 支持富文本编辑、自动草稿保存、导出 DOCX
+- 会话首页先展示会话列表，再进入具体写作工作台
+- 会话内提供对话区、工作流步骤、编辑器草稿和导出链路
+- 首轮请求生成写作引导，后续请求走正式写作增强流程
+- 流式接口通过 SSE 返回工作流、chunk、error、final 事件
+- 会话上下文按最近 20 条消息参与生成
 
 ### 2. 素材管理
 
-- 支持上传 `txt`、`doc`、`docx`、`pdf`
-- 上传后自动解析正文、识别标题、摘要、关键词、文种
-- 风格学习包含统计特征、关键词/术语、结构化风格分析、数据要素分析
-- 支持批量删除、批量分类、语义检索
-- 素材、风格、记忆均按账户隔离
+- 支持上传 `.doc`、`.docx`、`.pdf`、`.txt`
+- 自动提取标题、规范文种、摘要、关键词和风格特征
+- 素材内容写入数据库后同步进入账户级知识库命名空间
+- 支持搜索、查看详情、批量删除、批量分类
 
 ### 3. 书籍学习
 
-- 书籍目录固定为 `data/book`
-- 支持 `epub` 和 `pdf`
-- 扫描版 PDF 可自动走 OCR
-- 导入结果写入 OpenViking，不进入素材列表
-- 支持页面手动触发学习，也支持 CLI 导入
+- 支持扫描 `data/book` 目录，也支持前端直接上传书籍文件
+- 支持 `EPUB`、文本型 `PDF`、扫描型 `PDF`
+- 扫描型 PDF 可自动降级到 OCR 管线：`pdf2image + Pillow + pytesseract`
+- 书籍分片只进入知识库与书籍规则表，不出现在素材列表中
+- 每个账户的书籍知识、书籍规则和向量命名空间独立隔离
 
-### 4. 权限与账户管理
+### 4. 风格增强
 
-- 采用 RBAC 模型：账户、用户、角色、权限持久化管理
-- 注册依赖一次性邀请码
-- 管理后台支持账户、账号、角色、权限、邀请码管理
-- 资源和记忆以账户为边界隔离
+- 素材上传时会做统计特征、词汇特征和全文 LLM 风格分析
+- 写作生成时会同时融合素材检索、书籍检索、书籍风格规则和用户偏好
+- Prompt 内置“仅吸收写法、不直接复用原文”的硬约束
 
-### 5. 文档导出
+### 5. 账户、角色与权限
 
-- 支持从写作会话和编辑器导出 DOCX
-- DOCX 由后端统一生成
-- 生成记录可在导出历史中追踪
+- 采用账户级资源隔离，业务资源和记忆按账户管理
+- 支持系统角色与自定义角色
+- 支持用户角色绑定、邀请码生成/撤销、用户账户迁移
+- 支持初始化管理员自动引导创建
+
+### 6. 文档导出
+
+- 支持从写作结果导出 DOCX
+- 支持从编辑器草稿导出 DOCX
+- 提供导出历史列表和文件下载接口
+
+## 主要页面与路由
+
+公开页面：
+
+- `/`：落地页
+- `/login`：登录 / 邀请码注册
+
+写作区：
+
+- `/chat`：会话首页
+- `/chat/:sessionId`：写作工作台
+- `/materials`：素材管理
+- `/book-learning`：书籍学习
+- `/history`：导出历史
+- `/settings`：写作偏好
+
+管理区：
+
+- `/admin/overview`：管理概览
+- `/admin/accounts`：账户、用户、邀请码管理
+- `/admin/roles`：角色与权限管理
 
 ## 技术栈
 
-### 前端
+前端：
 
 - Vue 3
 - TypeScript
-- Vite
+- Vite 8 beta
 - Element Plus
 - Pinia
+- UnoCSS
 - TinyMCE
+- Playwright
 
-### 后端
+后端：
 
 - FastAPI
-- SQLAlchemy 2.x
-- Pydantic Settings
-- LangChain
-- OpenAI Compatible API
-- Jieba
+- SQLAlchemy 2
+- Alembic
+- LangChain + OpenAI Compatible API
+- OpenViking
 
-### 文档与解析
+文档与 OCR：
 
 - python-docx
 - PyPDF2
-- ebooklib
-- beautifulsoup4
-- antiword
+- EbookLib
+- BeautifulSoup4
 - pdf2image
 - pytesseract
 - Pillow
-
-### 部署
-
-- Docker Compose
-- Nginx
-- OpenViking
+- antiword
 
 ## 目录结构
 
 ```text
 writer/
-├─ backend/                    # FastAPI 后端
+├─ backend/
+│  ├─ alembic/
 │  ├─ app/
-│  │  ├─ api/                  # HTTP 路由
-│  │  ├─ models/               # 数据模型
-│  │  ├─ services/             # 业务服务
-│  │  ├─ prompts/              # 提示词与文种目录
-│  │  ├─ serializers.py        # 响应序列化
-│  │  ├─ bootstrap.py          # 启动引导
-│  │  └─ main.py               # 应用入口
-│  ├─ requirements.txt
-│  └─ Dockerfile
-├─ frontend/                   # Vue 前端
+│  │  ├─ api/
+│  │  ├─ models/
+│  │  ├─ schemas/
+│  │  ├─ services/
+│  │  └─ prompts/
+│  ├─ scripts/
+│  ├─ tests/
+│  ├─ alembic.ini
+│  ├─ Dockerfile
+│  └─ requirements.txt
+├─ frontend/
 │  ├─ src/
 │  │  ├─ api/
+│  │  ├─ layouts/
 │  │  ├─ router/
-│  │  ├─ store/
-│  │  ├─ types/
 │  │  └─ views/
-│  ├─ package.json
-│  └─ Dockerfile
+│  ├─ scripts/
+│  ├─ Dockerfile
+│  └─ package.json
 ├─ data/
-│  ├─ book/                    # 待学习书籍目录
-│  ├─ exports/                 # 导出文件目录
-│  ├─ uploads/                 # 上传素材目录
-│  └─ openviking/
-│     ├─ ov.conf               # 本地运行配置，不提交 Git
-│     ├─ ov.conf.example       # OpenViking 配置示例
-│     ├─ entrypoint.sh
-│     └─ workspace/
+│  ├─ book/
+│  ├─ exports/
+│  ├─ openviking/
+│  ├─ uploads/
+│  └─ writer.db
 ├─ docs/
 ├─ scripts/
 ├─ .env.example
@@ -131,74 +156,58 @@ writer/
 
 ## 运行要求
 
-### Docker 部署
+推荐部署方式：Docker Compose。
 
-- Docker
-- Docker Compose v2
+如需本地开发，建议环境：
 
-### 本地开发
-
-- Python 3.11
-- Node.js `^20.19.0 || >=22.12.0`
+- Python `3.11`
+- Node.js `22`
 - pnpm `10.26.2`
-- 建议保留 Docker 方式运行 OpenViking
+- Docker + Docker Compose v2
+- 本地 OCR 场景下额外安装 `tesseract-ocr`、中文语言包、`poppler-utils`
 
-## 快速开始
+## 快速开始（Docker 推荐）
 
 ### 1. 准备环境变量
 
-复制环境变量文件：
+在项目根目录复制示例文件：
 
 ```bash
 cp .env.example .env
 ```
 
-必须修改以下配置：
+至少需要修改这些配置：
 
 - `OPENAI_API_KEY`
 - `SECRET_KEY`
 - `OPENVIKING_ROOT_API_KEY`
+- `OPENAI_BASE_URL`、`OPENAI_MODEL`、`OPENAI_EMBEDDING_MODEL`（如果不使用默认 OpenAI 兼容服务）
 
-说明：
+注意：
 
-- `SECRET_KEY` 不能使用默认值，否则后端会拒绝启动
-- `OPENVIKING_ROOT_API_KEY` 不能使用默认值，否则后端会拒绝启动
-- `.env` 中的 `OPENVIKING_ROOT_API_KEY` 必须与 `data/openviking/ov.conf` 中的 `server.root_api_key` 保持一致
-
-路径相关变量说明：
-
-- `BOOKS_DIR`、`UPLOAD_DIR`、`EXPORT_DIR`、`OPENVIKING_CONFIG_FILE`、`OPENVIKING_SHARED_BACKEND_DIR` 如果写相对路径，会统一按项目根目录 `writer/` 解析，而不是按 `backend/` 或当前 shell 目录解析
-- 因此本地使用 `cd backend && uvicorn ...` 与 Docker Compose 使用同一份 `.env` 时，路径语义保持一致
-- 如果同一份 `.env` 同时用于本地和 Docker，优先使用仓库相对路径，例如 `./data/book`
-- `OPENVIKING_SHARED_OV_DIR` 是 OpenViking 容器内路径，应保持 `/app/data/...` 这类容器路径
-- 如果改成宿主机绝对路径，Docker 容器必须有对应 volume 挂载，否则会出现“本地能扫到、容器扫不到”或扫描结果为 `0` 的问题
+- `SECRET_KEY` 和 `OPENVIKING_ROOT_API_KEY` 不能保留默认占位值，否则后端会拒绝启动
+- `OPENVIKING_ROOT_API_KEY` 必须与 `data/openviking/ov.conf` 中的 `server.root_api_key` 保持一致
+- `BOOKS_DIR`、`UPLOAD_DIR`、`EXPORT_DIR`、`OPENVIKING_CONFIG_FILE`、`OPENVIKING_SHARED_BACKEND_DIR` 如果是相对路径，都会按项目根目录 `writer/` 解析
 
 ### 2. 准备 OpenViking 配置
 
-首次部署前复制配置示例：
+首次部署前执行：
 
 ```bash
 cp data/openviking/ov.conf.example data/openviking/ov.conf
 ```
 
-需要修改：
+然后手工修改 `data/openviking/ov.conf`。
 
-- `embedding.dense.api_key`
-- `embedding.dense.api_base`
-- `embedding.dense.model`
-- `vlm.api_key`
-- `vlm.api_base`
-- `vlm.model`
-- `server.root_api_key`
+重要约束：
 
-注意：
-
-- `data/openviking/ov.conf` 是本地运行文件，不应提交到 Git
-- 配置文件必须为 UTF-8 无 BOM，否则 OpenViking 会报 JSON 解析错误
+- 该文件是本地运行文件，不应提交到 Git
+- 文件编码必须是 `UTF-8 无 BOM`
+- 如果使用 Windows 编辑器，保存时不要带 BOM，否则 OpenViking 会报 `Unexpected UTF-8 BOM`
 
 ### 3. 可选：初始化管理员
 
-如果希望系统首次启动后自动创建管理员，请在 `.env` 中填写：
+如果希望首次启动后自动创建平台管理员，在 `.env` 中设置：
 
 ```env
 INITIAL_ADMIN_USERNAME=admin
@@ -209,27 +218,26 @@ INITIAL_ADMIN_DEPARTMENT=信息中心
 
 说明：
 
-- 仅在用户不存在时创建
-- 密码长度至少 8 位
-- 默认创建到 `account_id=1`
-- 角色为系统管理员
+- 仅当用户名不存在时才会创建
+- 密码长度必须至少 8 位
+- 初始化管理员默认归属默认账户 `account_id=1`
 
 ### 4. 启动服务
 
-Linux 上推荐直接使用部署脚本：
+Linux 服务器可直接使用部署脚本：
 
 ```bash
 bash deploy.sh
 ```
 
-脚本行为：
+脚本会自动：
 
-- 检查 Docker 与 Docker Compose
-- 若 `.env` 不存在，则从 `.env.example` 复制并提示手工修改
-- 若 `data/openviking/ov.conf` 不存在，则从示例复制并提示手工修改
+- 检查 Docker 和 Docker Compose
+- 若 `.env` 不存在则从 `.env.example` 复制
+- 若 `data/openviking/ov.conf` 不存在则从示例复制
 - 执行 `docker compose up -d --build`
 
-也可以手工启动：
+也可以手工执行：
 
 ```bash
 docker compose up -d --build
@@ -238,9 +246,8 @@ docker compose up -d --build
 ### 5. 访问地址
 
 - 前端：`http://localhost`
-- 后端 OpenAPI：`http://localhost:8000/docs`
-- 健康检查：`http://localhost:8000/api/health`
-- OpenViking：`http://localhost:1933`
+- 后端健康检查：`http://localhost:8000/api/health`
+- OpenViking 健康检查：`http://localhost:1933/health`
 
 ## 本地开发
 
@@ -256,6 +263,8 @@ docker compose up -d openviking
 
 ```bash
 cd backend
+python -m venv .venv
+# 激活虚拟环境后执行
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -268,333 +277,232 @@ pnpm install
 pnpm dev
 ```
 
-前端开发默认端口：`http://localhost:9000`
+本地开发地址：
 
-### 方案二：全部使用 Docker Compose
+- 前端：`http://localhost:5173`
+- 后端：`http://localhost:8000`
+
+说明：
+
+- 后端启动时会自动执行 Alembic 迁移和运行时引导任务
+- 如果你在本地运行后端且需要 OCR，请自行安装 `tesseract` 与 `poppler`
+- 如果你在本地运行后端且需要解析 `.doc`，建议安装 `antiword`
+
+### 方案二：前后端全部使用 Docker Compose
 
 ```bash
 docker compose up -d --build
 ```
 
-### 数据库迁移（Alembic）
+## 数据库迁移
 
-后端已切换为 Alembic 迁移管理。应用启动时会自动执行 `upgrade head`；开发阶段也可以手动执行：
+项目以 Alembic revision 为数据库结构真源。
+
+后端启动时会自动迁移到最新版本；如需手工执行：
 
 ```bash
 cd backend
 python -m alembic -c alembic.ini upgrade head
 ```
 
-创建新迁移：
+新增迁移：
 
 ```bash
 cd backend
-python -m alembic -c alembic.ini revision --autogenerate -m "描述本次结构变更"
+python -m alembic -c alembic.ini revision --autogenerate -m "describe change"
 ```
 
-注意：
+兼容说明：
 
-- 旧数据库如果已经有业务表但没有 `alembic_version`，启动时会走一次兼容补齐并自动 `stamp head`
-- 新增或修改模型后，不再使用 `create_all` 作为正式迁移手段，必须补 Alembic revision
+- 旧数据库如果已有业务表但没有 `alembic_version`，系统会做一次兼容补齐并自动 `stamp head`
+- 不要再用“手工改表代替迁移”的方式维护结构
 
-## 认证、账户与权限
+## 认证、账户与权限模型
 
-### 登录与注册
+### 注册与登录
 
-- 用户注册接口：`/api/auth/register`
+- 登录使用用户名 + 密码
 - 注册必须使用一次性邀请码
-- 注册成功后默认分配写作角色
-- 登录后返回 token 与当前用户权限上下文
+- 邀请码绑定到账户，注册后用户自动进入对应账户
 
-### 管理后台页面
+### 角色与权限
 
-- `/admin/overview`
-- `/admin/accounts`
-- `/admin/roles`
+系统内置两个系统角色：
 
-### 权限边界
+- `admin`：账户管理、用户、角色、邀请码及业务资源全管理
+- `writer`：写作、素材、文档、偏好、书籍学习等业务功能使用权限
 
-- 后端使用权限码强制校验
-- 前端路由、菜单、按钮与后端权限保持一致
-- 账户是资源隔离边界
-- OpenViking 资源命名空间按账户划分
+同时支持自定义角色，并将权限持久化到数据库中。
 
-## 素材管理
+### 账户级数据隔离
 
-### 支持格式
+以下资源按账户隔离：
 
-- `txt`
-- `doc`
-- `docx`
-- `pdf`
+- 素材
+- 写作会话与消息
+- 会话草稿
+- 导出记录
+- 用户偏好与写作习惯
+- 书籍来源与书籍规则
+- OpenViking 中的 materials / books / memory 命名空间
 
-### 解析说明
+## 写作流程说明
 
-- `docx` 通过 `python-docx` 提取文本
-- `doc` 优先调用系统工具 `antiword`，若缺失也会尝试 `catdoc` 或 `wvText`
-- `pdf` 使用 `PyPDF2`
-- 上传流程会同步完成解析、分类和风格分析
+典型链路如下：
 
-### 素材分析输出
+1. 新建会话
+2. 首轮请求生成写作引导
+3. 后续请求走正式写作流程
+4. 流式工作流步骤依次展示：
+   - 分析请求意图
+   - 搜索素材
+   - 检索书籍知识
+   - 融合书籍风格规则
+   - 生成回复
+5. 在编辑器中保存草稿或直接导出 DOCX
+
+非流式接口：`/api/chat/send`
+
+流式接口：`/api/chat/send-stream`
+
+## 素材管理说明
+
+支持格式：
+
+- `.doc`
+- `.docx`
+- `.pdf`
+- `.txt`
+
+上传后会产出：
 
 - 标题
+- 规范文种
 - 摘要
 - 关键词
-- 文种
-- 字数
-- 风格统计
-- 结构化风格结论
-- 数据要素及其主题归属
+- 风格特征
+- 字数统计
 
-## 书籍学习
+素材入库后会同步到当前账户的知识库命名空间，用于后续写作增强。
 
-### 书籍目录
+## 书籍学习与 OCR
+
+### 目录与路径
+
+默认书籍目录是：
 
 ```text
 data/book
 ```
 
-路径说明：
+如果 `.env` 中写的是：
 
-- 页面扫描与默认导入读取 `settings.books_dir`
-- `BOOKS_DIR=./data/book` 会统一解析到项目根目录下的 `data/book`
-- Docker Compose 默认通过 `./data:/app/data` 挂载数据目录，因此容器内对应路径为 `/app/data/book`
-- 如果自定义书籍目录，要同步调整 Docker volume 挂载；仅修改 `.env` 而不挂载目录，容器内仍会扫描不到文件
+```env
+BOOKS_DIR=./data/book
+```
 
-### 支持格式
+则无论本地运行还是 Docker Compose，都会按项目根目录解析到同一位置。
 
-- `epub`
-- `pdf`
+### 导入方式
 
-### OCR 说明
+前端页面：
 
-当 PDF 文本层不足时，系统会自动切换 OCR。
+- 书籍学习页面可扫描目录、上传书籍、启动学习、查看任务进度和导入记录
 
-Docker 镜像已包含以下依赖：
-
-- `poppler-utils`
-- `tesseract-ocr`
-- `tesseract-ocr-chi-sim`
-
-### 使用方式
-
-#### 前端页面
-
-- 菜单：`书籍学习`
-- 路由：`/book-learning`
-
-#### 后端接口
+后端 API：
 
 - `GET /api/materials/books/scan`
+- `POST /api/materials/books/upload`
 - `POST /api/materials/books/import`
 - `GET /api/materials/books/tasks/{task_id}`
 - `GET /api/materials/books/sources`
 
-#### CLI
-
-默认读取 `.env` 中的 `BOOKS_DIR`：
+CLI：
 
 ```bash
 cd backend
 python -m app.jobs.import_books
-```
-
-全量重建：
-
-```bash
-cd backend
 python -m app.jobs.import_books --rebuild
-```
-
-显式指定目录时，`--dir` 同样按项目根目录 `writer/` 解析，而不是按 `backend/` 当前目录解析：
-
-```bash
-cd backend
-python -m app.jobs.import_books --dir ./data/book
-```
-
-指定文件：
-
-```bash
-cd backend
+python -m app.jobs.import_books --dir ../data/book
 python -m app.jobs.import_books --selected-file 示例.pdf --selected-file 分类/示例.epub
 ```
 
-## 写作与导出
+### OCR 说明
 
-### 写作流程
+- 文本型 PDF 优先走文本层提取
+- 扫描型 PDF 会自动切换到 OCR
+- OCR 参数由 `PDF_OCR_ENABLED`、`PDF_OCR_LANG`、`PDF_OCR_DPI`、`PDF_OCR_MAX_PAGES` 控制
+- Docker 后端镜像已经安装 OCR 依赖；本地运行需要自行安装系统依赖
 
-- 第一轮对话会优先给出写作引导
-- 后续对话会检索素材、书籍知识、书籍风格规则
-- 流式接口会返回工作流步骤事件
-- 生成成功后保存助手消息和账户级记忆笔记
+## 质量保障与常用命令
 
-### 导出能力
-
-- 支持会话导出 DOCX
-- 支持编辑器内容导出 DOCX
-- 导出记录可在导出历史页面查询和下载
-
-## 关键环境变量
-
-以下变量最常用，完整示例见 [`.env.example`](./.env.example)：
-
-说明：
-
-- `OPENVIKING_CONFIG_FILE`、`OPENVIKING_SHARED_BACKEND_DIR`、`UPLOAD_DIR`、`EXPORT_DIR`、`BOOKS_DIR` 若使用相对路径，会统一按项目根目录 `writer/` 解析
-- `OPENVIKING_SHARED_OV_DIR` 是 OpenViking 容器内路径，不参与项目根路径归一化
-- 如果 `.env` 同时给本地和 Docker Compose 使用，建议保留 `./data/...` 这类仓库相对路径
-
-```env
-OPENAI_API_KEY=
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-
-DATABASE_URL=sqlite:///./data/writer.db
-
-OPENVIKING_SERVER_URL=http://openviking:1933
-OPENVIKING_ROOT_API_KEY=
-OPENVIKING_CONFIG_FILE=./data/openviking/ov.conf
-OPENVIKING_SHARED_BACKEND_DIR=./data/openviking/workspace/_staging
-OPENVIKING_SHARED_OV_DIR=/app/data/_staging
-
-UPLOAD_DIR=./data/uploads
-EXPORT_DIR=./data/exports
-BOOKS_DIR=./data/book
-
-SECRET_KEY=
-ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-INITIAL_ADMIN_USERNAME=
-INITIAL_ADMIN_PASSWORD=
-INITIAL_ADMIN_DISPLAY_NAME=admin
-INITIAL_ADMIN_DEPARTMENT=admin
-
-BOOK_AUGMENTATION_ENABLED=true
-BOOK_CHUNK_SIZE=800
-BOOK_CHUNK_OVERLAP=120
-BOOK_RETRIEVAL_TOP_K=4
-BOOK_STYLE_TOP_K=6
-PDF_OCR_ENABLED=true
-PDF_OCR_LANG=chi_sim+eng
-PDF_OCR_DPI=300
-PDF_OCR_MAX_PAGES=500
-```
-
-## 测试与校验
-
-### 后端
+后端：
 
 ```bash
-python -m unittest discover -s backend/tests -v
-python -m py_compile backend/app/main.py
-```
-
-### 前端
-
-```bash
-cd frontend
-pnpm -s exec vue-tsc --noEmit
-pnpm -s run test:permissions
-pnpm run --config.verify-deps-before-run=false build
-```
-
-### 编码校验
-
-全仓文本文件必须为 UTF-8 无 BOM：
-
-```bash
+python -m compileall backend/app backend/tests scripts
+python -m pytest backend/tests/test_regressions.py -q
 python scripts/check_text_encoding.py --all
 ```
 
-自动去除 BOM：
+前端：
 
 ```bash
-python scripts/check_text_encoding.py --all --fix-bom
+pnpm -C frontend run verify:openapi
+pnpm -C frontend exec vue-tsc --noEmit
+pnpm -C frontend run lint:eslint:check
+pnpm -C frontend run lint:stylelint:check
+pnpm -C frontend run test:permissions
+pnpm -C frontend run --config.verify-deps-before-run=false build
 ```
 
-PowerShell 环境建议先加载：
+可选的视觉回归：
 
-```powershell
-. .\scripts\powershell_utf8.ps1
+```bash
+pnpm -C frontend run test:visual
 ```
 
-验证 PowerShell 中文和无 BOM 写入：
-
-```powershell
-& .\scripts\verify_powershell_encoding.ps1
-```
+GitHub Actions 已配置 CI，推送与 PR 会自动执行后端回归、OpenAPI 校验、前端类型检查、Lint、权限回归与构建。
 
 ## 常见问题
 
-### 1. 后端启动时报错 `SECRET_KEY must be overridden`
+### 1. 后端启动时报 `SECRET_KEY must be overridden`
 
-原因：
+说明 `.env` 里仍在使用默认占位密钥。请至少修改：
 
-- `.env` 仍在使用默认密钥
-
-处理：
-
-- 修改 `.env` 中的 `SECRET_KEY`
-- 修改 `.env` 中的 `OPENVIKING_ROOT_API_KEY`
-- 确保 `data/openviking/ov.conf` 中的 `root_api_key` 同步更新
+- `SECRET_KEY`
+- `OPENVIKING_ROOT_API_KEY`
 
 ### 2. OpenViking 启动时报 JSON BOM 错误
 
-原因：
+请检查 `data/openviking/ov.conf`：
 
-- `ov.conf` 含 BOM
+- 必须是 `UTF-8 无 BOM`
+- 不要用会自动加 BOM 的编辑器保存
+- 重新从 `ov.conf.example` 复制后再修改通常可以恢复
 
-处理：
+### 3. 书籍学习页面明明有 `data/book`，扫描却是 0
 
-```bash
-python scripts/check_text_encoding.py --all --fix-bom
-```
+优先检查：
 
-如果只修复单文件，请确保保存为 UTF-8 无 BOM。
+- `.env` 中的 `BOOKS_DIR` 是否仍为相对路径，例如 `./data/book`
+- Docker Compose 是否仍保留 `./data:/app/data` 挂载
+- 目录下文件扩展名是否为系统支持的 `epub` 或 `pdf`
 
-### 3. 书籍学习页面明明有 `data/book`，扫描结果却是 `0`
+### 4. 本地 OCR 不生效
 
-检查项：
+请确认本机已安装：
 
-- `.env` 中的 `BOOKS_DIR` 是否仍是仓库相对路径，例如 `./data/book`
-- 如果同一份 `.env` 同时用于本地和 Docker，不要直接写宿主机绝对路径，除非容器也有对应 volume 挂载
-- `docker-compose.yml` 是否仍保留 `./data:/app/data`，保证容器内能看到 `/app/data/book`
-- 自定义目录时，是否同时修改了容器挂载和导入命令中的 `--dir`
+- `tesseract-ocr`
+- 中文语言包 `chi_sim`
+- `poppler-utils`
 
-### 4. PDF OCR 不生效
+## 相关文档
 
-检查项：
-
-- `PDF_OCR_ENABLED=true`
-- 容器内已安装 `tesseract-ocr`
-- 容器内已安装 `poppler-utils`
-- `PDF_OCR_LANG` 与实际语言匹配
-
-### 5. 注册失败，提示邀请码无效或已过期
-
-检查项：
-
-- 邀请码是否由管理员在正确账户下创建
-- 邀请码是否已被使用
-- 邀请码所属账户是否已禁用
-
-### 6. 书籍学习任务中断
-
-说明：
-
-- 服务重启后，运行中的书籍导入任务会被标记为 `interrupted`
-- 可在书籍学习页面重新发起任务
-
-## 架构约束
-
-- 数据库结构以 Alembic revision 为真源；启动时自动执行迁移，旧库仅在无 `alembic_version` 时走一次兼容补齐并 `stamp head`
-- API 对外时间统一为上海时间
-- 内部数据库时间统一以 UTC 存储
-- 文本文件统一使用 UTF-8 无 BOM
-- `data/openviking/ov.conf` 不应提交到 Git
+- [docs/development-standard.md](./docs/development-standard.md)
+- [docs/backend-development-standard.md](./docs/backend-development-standard.md)
+- [docs/frontend-design-standard.md](./docs/frontend-design-standard.md)
+- [`.env.example`](./.env.example)
 
 ## License
 
-本项目使用 [Apache-2.0](./LICENSE) 协议。
+本项目采用 [Apache-2.0](./LICENSE) 开源协议。

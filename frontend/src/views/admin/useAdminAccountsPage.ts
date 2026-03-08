@@ -262,8 +262,8 @@ export function useAdminAccountsPage() {
     try {
       const { data } = await apiAccounts.createInvite(selectedAccountId.value, inviteForm.expires_in_hours)
       inviteResult.value = {
-        code: data.invite_code,
-        expires_at: data.expires_at,
+        code: data.invite_code ?? '',
+        expires_at: data.expires_at ?? '',
       }
       ElMessage.success('邀请码已生成')
       await loadInvites()

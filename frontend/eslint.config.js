@@ -6,6 +6,8 @@ export default antfu(
     ignores: [
       'public',
       'dist*',
+      'src/api/generated/openapi.d.ts',
+      'src/api/generated/openapi.json',
     ],
   },
   {

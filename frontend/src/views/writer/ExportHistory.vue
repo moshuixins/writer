@@ -2,6 +2,7 @@
 import type { ExportDoc } from '@/types/writer'
 import { ElMessage } from 'element-plus'
 import { onMounted, ref } from 'vue'
+import { extractApiErrorMessage } from '@/api'
 import apiDocuments from '@/api/modules/documents'
 import ActionBar from '@/components/ActionBar/index.vue'
 import DataTableShell from '@/components/DataTableShell/index.vue'
@@ -47,8 +48,8 @@ async function download(row: ExportDoc) {
     a.click()
     URL.revokeObjectURL(url)
   }
-  catch {
-    ElMessage.error('下载失败，文件可能已失效')
+  catch (error) {
+    ElMessage.error(extractApiErrorMessage(error))
   }
 }
 

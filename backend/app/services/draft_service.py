@@ -23,7 +23,7 @@ class DraftService:
             ChatSession.user_id == user_id,
         ).first()
         if not session:
-            raise HTTPException(404, "会话不存在")
+            raise HTTPException(404, '会话不存在')
         return session
 
     def get_or_default_draft(self, user_id: int, session_id: int) -> dict[str, Any]:
@@ -38,12 +38,12 @@ class DraftService:
         if not row:
             return serialize_draft_response(
                 session_id=session_id,
-                draft=self.parser.default_draft(title=session.title or ""),
+                draft=self.parser.default_draft(title=session.title or ''),
                 exists=False,
                 updated_at=None,
             )
 
-        draft = self.parser.normalize_or_default(row.draft_json, title_fallback=session.title or "")
+        draft = self.parser.normalize_or_default(row.draft_json, title_fallback=session.title or '')
         return serialize_draft_response(
             session_id=session_id,
             draft=draft,
@@ -57,10 +57,12 @@ class DraftService:
         user_id: int,
         session_id: int,
         draft: dict[str, Any],
-        save_mode: str = "manual",
+        save_mode: str = 'manual',
+        commit: bool = True,
     ) -> tuple[SessionDraft, dict[str, Any]]:
+        del save_mode
         session = self.validate_session_owner(user_id=user_id, session_id=session_id)
-        normalized = self.parser.normalize_draft(draft, title_fallback=session.title or "")
+        normalized = self.parser.normalize_draft(draft, title_fallback=session.title or '')
         content_text = self.parser.draft_to_plain_text(normalized)
 
         row = self.db.query(SessionDraft).filter(
@@ -82,6 +84,8 @@ class DraftService:
             row.draft_json = normalized
             row.content_text = content_text
 
-        self.db.commit()
-        self.db.refresh(row)
+        self.db.flush()
+        if commit:
+            self.db.commit()
+            self.db.refresh(row)
         return row, normalized

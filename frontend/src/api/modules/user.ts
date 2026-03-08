@@ -1,24 +1,30 @@
 import type { AxiosRequestConfig } from 'axios'
-import type { UserInfo } from '@/types/writer'
+import type {
+  AuthTokenResponse,
+  AuthUserResponse,
+  MessageResponse,
+  PermissionCodesResponse,
+  ProfileUpdateResponse,
+} from '../generated'
 import api from '../index'
 
 export default {
   login: (data: { account: string, password: string }) =>
-    api.post('/api/auth/login', {
+    api.post<AuthTokenResponse>('/api/auth/login', {
       username: data.account,
       password: data.password,
     }),
 
   register: (data: { username: string, password: string, invite_code: string, display_name?: string }) =>
-    api.post('/api/auth/register', data),
+    api.post<AuthTokenResponse>('/api/auth/register', data),
 
-  permission: () => api.get<{ permissions: string[] }>('/api/auth/permissions'),
+  permission: () => api.get<PermissionCodesResponse>('/api/auth/permissions'),
 
   passwordEdit: (data: { password: string, newPassword: string }) =>
-    api.post('/api/auth/change-password', data),
+    api.post<MessageResponse>('/api/auth/change-password', data),
 
-  getProfile: (config?: AxiosRequestConfig) => api.get<UserInfo>('/api/auth/profile', config),
+  getProfile: (config?: AxiosRequestConfig) => api.get<AuthUserResponse>('/api/auth/profile', config),
 
   updateProfile: (data: { display_name?: string, department?: string }, config?: AxiosRequestConfig) =>
-    api.put('/api/auth/profile', data, config),
+    api.put<ProfileUpdateResponse>('/api/auth/profile', data, config),
 }

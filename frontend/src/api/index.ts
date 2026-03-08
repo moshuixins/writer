@@ -26,7 +26,45 @@ api.interceptors.request.use((request) => {
   return request
 })
 
-function buildErrorMessage(error: any): string {
+export function resolveApiUrl(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  const baseURL = `${api.defaults.baseURL || ''}`.trim()
+  if (!baseURL || baseURL === '/') {
+    return normalizedPath
+  }
+  return `${baseURL.replace(/\/+$/, '')}${normalizedPath}`
+}
+
+async function normalizeBlobErrorPayload(error: any) {
+  const data = error?.response?.data
+  if (typeof Blob === 'undefined' || !(data instanceof Blob)) {
+    return
+  }
+
+  const blobType = String(data.type || '')
+  if (blobType && !blobType.includes('json') && !blobType.startsWith('text/')) {
+    return
+  }
+
+  try {
+    const rawText = await data.text()
+    const text = rawText.trim()
+    if (!text) {
+      return
+    }
+    try {
+      error.response.data = JSON.parse(text)
+    }
+    catch {
+      error.response.data = { error: text }
+    }
+  }
+  catch {
+    // keep original error payload when blob parsing fails
+  }
+}
+
+export function extractApiErrorMessage(error: any): string {
   const status = error.response?.status ?? error.status
   const payload = error.response?.data || {}
   const backendMessage = payload?.error || payload?.detail || ''
@@ -50,7 +88,9 @@ function buildErrorMessage(error: any): string {
   return '请求失败，请稍后重试'
 }
 
-function handleError(error: any) {
+async function handleError(error: any) {
+  await normalizeBlobErrorPayload(error)
+
   const status = error.response?.status ?? error.status
   const url = error.config?.url || ''
   const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register')
@@ -60,7 +100,7 @@ function handleError(error: any) {
   }
   else if (!error.config?.skipErrorToast) {
     toast.error('请求失败', {
-      description: buildErrorMessage(error),
+      description: extractApiErrorMessage(error),
     })
   }
   return Promise.reject(error)

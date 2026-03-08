@@ -1,18 +1,24 @@
 import type { AxiosRequestConfig } from 'axios'
-import type { ChatMessage, ChatSession, SaveDraftPayload, SessionDraftResponse } from '@/types/writer'
+import type {
+  ChatMessageListResponse,
+  ChatSessionListResponse,
+  ChatSessionResponse,
+  SessionDraftResponse,
+} from '../generated'
+import type { SaveDraftPayload } from '@/types/writer'
 import api from '../index'
 
 export default {
-  getSessions: () => api.get<ChatSession[]>('/api/chat/sessions'),
+  getSessions: () => api.get<ChatSessionListResponse>('/api/chat/sessions'),
 
   createSession: (data: { title: string, doc_type: string | null }) =>
-    api.post<ChatSession>('/api/chat/sessions', data),
+    api.post<ChatSessionResponse>('/api/chat/sessions', data),
 
   updateSession: (sessionId: number, data: { title: string }) =>
-    api.put<ChatSession>(`/api/chat/sessions/${sessionId}`, data),
+    api.put<ChatSessionResponse>(`/api/chat/sessions/${sessionId}`, data),
 
   getMessages: (sessionId: number) =>
-    api.get<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`),
+    api.get<ChatMessageListResponse>(`/api/chat/sessions/${sessionId}/messages`),
 
   getDraft: (sessionId: number) =>
     api.get<SessionDraftResponse>(`/api/chat/sessions/${sessionId}/draft`),

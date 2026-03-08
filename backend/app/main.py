@@ -13,6 +13,8 @@ from app.api import accounts, auth, chat, documents, materials, preferences
 from app.bootstrap import ensure_runtime_ready
 from app.config import get_settings
 from app.errors import AppError, logger, setup_logging
+from app.services.background_executor import shutdown_background_executors
+from app.services.book_import_dispatcher import book_import_dispatcher
 
 setup_logging()
 settings = get_settings()
@@ -24,7 +26,14 @@ _rate_limit = settings.rate_limit_per_minute
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_runtime_ready()
-    yield
+    book_import_dispatcher.resume_recoverable_tasks()
+    try:
+        yield
+    finally:
+        book_import_dispatcher.shutdown(wait=False, cancel_futures=True)
+        shutdown_background_executors(wait=False, cancel_futures=True)
+        await chat.ctx_bridge.close()
+        await materials.ctx_bridge.close()
 
 
 def create_app() -> FastAPI:
@@ -61,7 +70,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError):
-        error_id = uuid4().hex[:12]
+        error_id = exc.error_id or uuid4().hex[:12]
         logger.warning(
             'AppError id=%s path=%s status=%s err=%s detail=%s',
             error_id,

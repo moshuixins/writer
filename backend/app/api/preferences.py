@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 from app.auth import require_permission
 from app.database import get_db
 from app.models.user import User
+from app.schemas.common import MessageResponse
+from app.serializers import serialize_message_response
+from app.schemas.preferences import PreferencesResponse
 from app.services.memory_service import MemoryService
 
 router = APIRouter()
@@ -22,7 +25,7 @@ class BatchPreferenceRequest(BaseModel):
     avoid_phrases: str = ""
 
 
-@router.get("")
+@router.get("", response_model=PreferencesResponse)
 def get_preferences(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("preferences:read")),
@@ -31,18 +34,19 @@ def get_preferences(
     return svc.get_preferences(user_id=current_user.id)
 
 
-@router.put("")
+@router.put("", response_model=MessageResponse)
 def set_preference(
     req: SetPreferenceRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("preferences:write")),
 ):
     svc = MemoryService(db, account_id=current_user.account_id)
-    svc.set_preference(user_id=current_user.id, key=req.key, value=req.value)
-    return {"message": "偏好已保存"}
+    svc.set_preference(user_id=current_user.id, key=req.key, value=req.value, commit=False)
+    db.commit()
+    return serialize_message_response("偏好已保存")
 
 
-@router.put("/batch")
+@router.put("/batch", response_model=MessageResponse)
 def set_preferences_batch(
     req: BatchPreferenceRequest,
     db: Session = Depends(get_db),
@@ -50,5 +54,6 @@ def set_preferences_batch(
 ):
     svc = MemoryService(db, account_id=current_user.account_id)
     for key, value in req.model_dump().items():
-        svc.set_preference(user_id=current_user.id, key=key, value=value)
-    return {"message": "偏好已保存"}
+        svc.set_preference(user_id=current_user.id, key=key, value=value, commit=False)
+    db.commit()
+    return serialize_message_response("偏好已保存")
